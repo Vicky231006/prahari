@@ -545,14 +545,10 @@ async def trigger_scenario(req: ScenarioInjectionRequest):
             detail=f"Failed to initialize Kafka producer for demo mode: {e}"
         )
 
-    # Create dummy identity states (using first 10 identities)
+    # Create dummy identity states for all identities so random.choice doesn't throw KeyError
     states = {}
-    for iid in IDENTITY_POOL[:10]:
+    for iid in IDENTITY_POOL:
         states[iid] = IdentityState(iid)
-
-    # Link for insider collusion
-    states[IDENTITY_POOL[0]].linked_identities.append(IDENTITY_POOL[1])
-    states[IDENTITY_POOL[1]].linked_identities.append(IDENTITY_POOL[0])
 
     try:
         events = []
