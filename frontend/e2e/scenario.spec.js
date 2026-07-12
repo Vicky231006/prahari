@@ -30,14 +30,14 @@ test.describe('Scenario Runner (Phase 10)', () => {
 
     // Inject Insider
     await page.click('text="Inject Scenario" >> nth=1');
-    await expect(page.locator('.scenario-card__result--success').nth(1)).toContainText('Injected scenario insider successfully');
+    await expect(page.locator('.scenario-card__result--success').nth(1)).toContainText('Injected scenario insider_collusion successfully');
 
     // Inject Credential Stuffing
     await page.click('text="Inject Scenario" >> nth=2');
-    await expect(page.locator('.scenario-card__result--success').nth(2)).toContainText('Injected scenario credential_stuffing successfully');
+    await expect(page.locator('.scenario-card__result--success').nth(2)).toContainText('Injected scenario credential_stuffing_ato successfully');
 
     // Inject HNDL
     await page.click('text="Inject Scenario" >> nth=3');
-    await expect(page.locator('.scenario-card__result--success').nth(3)).toContainText('Injected scenario hndl successfully');
+    await expect(page.locator('.scenario-card__result--success').nth(3)).toContainText('Injected scenario hndl_exposure successfully');
   });
 });

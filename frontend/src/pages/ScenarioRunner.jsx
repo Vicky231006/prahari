@@ -10,17 +10,17 @@ const SCENARIOS = [
     desc: 'Injects a login from a new device with impossible travel, followed immediately by a high-value transfer to a new beneficiary.'
   },
   {
-    id: 'insider',
+    id: 'insider_collusion',
     title: 'Insider Collusion',
     desc: 'Injects an unusual data access by a privileged account, correlated with a transaction from a linked identity to a shared beneficiary.'
   },
   {
-    id: 'credential_stuffing',
+    id: 'credential_stuffing_ato',
     title: 'Credential Stuffing → ATO',
     desc: 'Injects a burst of failed logins across identities from few IPs, followed by one success and an immediate transaction.'
   },
   {
-    id: 'hndl',
+    id: 'hndl_exposure',
     title: 'HNDL Exposure',
     desc: 'Injects a TLS session carrying KYC or credit history sensitivity data negotiated over a legacy (RSA/ECDHE) key exchange.'
   }
@@ -73,7 +73,7 @@ export default function ScenarioRunner() {
               </button>
               
               {results[sc.id]?.success && (
-                <button className="btn btn--ghost text-xs" onClick={() => navigate(sc.id === 'hndl' ? '/quantum' : '/alerts')}>
+                <button className="btn btn--ghost text-xs" onClick={() => navigate(sc.id === 'hndl_exposure' ? '/quantum' : '/alerts')}>
                   View Results →
                 </button>
               )}
