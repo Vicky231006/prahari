@@ -25,6 +25,31 @@
 - `docker-compose.yml` uses `profiles: ["full"]` for application services so `docker compose up` (no profile) boots only infra, and `docker compose --profile full up` boots everything
 - PostgreSQL init uses `docker-entrypoint-initdb.d/` convention for zero-config schema seeding
 
+## Phase 8: Frontend Shell + Dual-Theme Engine (Complete)
+- Scaffolded React 18 + Vite with `@tanstack/react-query`, `lucide-react`, and `react-router-dom`.
+- Created robust dual-theme context engine in `index.css` supporting Brutalist and Aero aesthetics with dynamic CSS custom properties.
+- Built a shared `ThemeContext` backed by `localStorage` for crossfade theme switching without layout reflow.
+- Created `App.jsx`, `Sidebar.jsx`, and `Header.jsx` with real-time `WebSocket` connection status indicators.
+
+## Phase 9: Progressive-Disclosure Dashboard + Scenario Runner (Complete)
+- **Level 1 (KPI Landing)**: Built `Dashboard.jsx` fetching active anomalies and high-risk identities via React Query caching.
+- **Level 2 (Alert List)**: Built `Alerts.jsx` rendering severities, fusion scores, and filtering by identity ID or severity.
+- **Level 3 (Explanation Drawer)**: Built `ExplanationDrawer.jsx` that streams semantic RBI control explanations from `/api/explain/stream` via `fetch` streaming API and triggers case actions (Escalate/Dismiss).
+- **Quantum Risk Panel**: Built `QuantumRisk.jsx` tracking PQC readiness vs Legacy (RSA) and highlighting specific HNDL exposure.
+- **Case Management**: Built `Cases.jsx` rendering analyst queues and an immutable audit trail of actions.
+- **Scenario Runner**: Built `ScenarioRunner.jsx` allowing 1-click injection of synthetic attacks when `DEMO_MODE=true`.
+
+## Phase 10: Automated Test Suites (Complete)
+- **Backend**: Implemented comprehensive `pytest` suite simulating rolling aggregations, model scoring, and RAG mock behavior in `tests/test_detection_rules.py`.
+- **Frontend**: Integrated `Vitest` and `@testing-library/react`. Wrote `Theme.test.jsx` verifying the `data-theme` DOM attribute changes and dual-theme functionality.
+- **Frontend E2E**: Integrated `@playwright/test`. Wrote `scenario.spec.js` running through the 4 synthetic attack scenarios in the Scenario Runner.
+
+## Phase 11: Documentation Pass (Complete)
+- Updated `README.md` to map to "Overview & Architecture" (Slides 3/4).
+- Added `/docs/functional/README.md` for "User Flow & Logic" (Slide 5).
+- Created `DIFFERENTIATORS.md` for "Key Differentiators & Adoption" (Slide 6).
+- Created `LIMITATIONS.md` outlining the synthetic data and model placeholder aspects for full transparency.
+
 ---
 
 ## Phase 2 — Synthetic Data Generators (COMPLETE ✅)
