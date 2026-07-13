@@ -42,6 +42,7 @@ class CaseResponse(BaseModel):
     status: str
     assigned_to: Optional[str] = None
     notes: Optional[str] = None
+    alert: Optional[AlertBase] = None
     created_at: datetime
     updated_at: datetime
 

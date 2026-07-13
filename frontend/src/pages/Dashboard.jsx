@@ -41,7 +41,7 @@ export default function Dashboard() {
             <Binary size={18} className="text-muted" />
             <div className="kpi-card__label">Quantum Risk Exposure</div>
           </div>
-          <div className="kpi-card__value">{kpis?.quantum_stats?.flagged_hndl || 0}</div>
+          <div className="kpi-card__value">{kpis?.quantum_stats?.hndl_exposed_count || 0}</div>
           <div className="kpi-card__sub text-muted mt-12">
             HNDL Flagged Sessions in last 24h
           </div>
@@ -71,7 +71,7 @@ export default function Dashboard() {
                       {id.risk_score.toFixed(1)}
                     </span>
                   </td>
-                  <td>{id.txn_count} txns mapped</td>
+                  <td>{id.alert_count} recent anomalies</td>
                   <td>
                     <button className="btn btn--secondary btn--small">View Timeline</button>
                   </td>

@@ -7,11 +7,11 @@ export default function QuantumRisk() {
   const { data: kpis } = useQuery({ queryKey: ['dashboard_kpis'], queryFn: fetchDashboardKPIs, staleTime: 30000 });
   const { data: sessions, isLoading } = useQuery({ queryKey: ['quantum_sessions'], queryFn: fetchQuantumSessions, staleTime: 5000 });
 
-  const stats = kpis?.quantum_stats || { total_scanned: 0, legacy: 0, hybrid: 0, pqc_ready: 0 };
-  const total = stats.total_scanned || 1;
-  const pctLegacy = ((stats.legacy / total) * 100).toFixed(1);
-  const pctHybrid = ((stats.hybrid / total) * 100).toFixed(1);
-  const pctPQC = ((stats.pqc_ready / total) * 100).toFixed(1);
+  const stats = kpis?.quantum_stats || { legacy_count: 0, hybrid_count: 0, pqc_ready_count: 0 };
+  const total = (stats.legacy_count || 0) + (stats.hybrid_count || 0) + (stats.pqc_ready_count || 0) || 1;
+  const pctLegacy = (((stats.legacy_count || 0) / total) * 100).toFixed(1);
+  const pctHybrid = (((stats.hybrid_count || 0) / total) * 100).toFixed(1);
+  const pctPQC = (((stats.pqc_ready_count || 0) / total) * 100).toFixed(1);
 
   return (
     <div className="fade-in">
@@ -33,15 +33,15 @@ export default function QuantumRisk() {
         <div className="quantum-legend">
           <div className="quantum-legend__item">
             <div className="quantum-legend__dot quantum-bar__segment--pqc" />
-            <span><strong>PQC-Ready</strong> (ML-KEM, ML-DSA) — {stats.pqc_ready} sessions</span>
+            <span><strong>PQC-Ready</strong> (ML-KEM, ML-DSA) — {stats.pqc_ready_count || 0} sessions</span>
           </div>
           <div className="quantum-legend__item">
             <div className="quantum-legend__dot quantum-bar__segment--hybrid" />
-            <span><strong>Hybrid</strong> (X25519-MLKEM) — {stats.hybrid} sessions</span>
+            <span><strong>Hybrid</strong> (X25519-MLKEM) — {stats.hybrid_count || 0} sessions</span>
           </div>
           <div className="quantum-legend__item">
             <div className="quantum-legend__dot quantum-bar__segment--legacy" />
-            <span><strong>Legacy Risk</strong> (RSA, ECDHE) — {stats.legacy} sessions</span>
+            <span><strong>Legacy Risk</strong> (RSA, ECDHE) — {stats.legacy_count || 0} sessions</span>
           </div>
         </div>
       </div>

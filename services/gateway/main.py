@@ -91,10 +91,6 @@ def run_kafka_consumer():
         print("[background-consumer] Critical: Kafka consumer could not start. Telemetry updates will not work.")
         return
 
-    # Loop forever
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-
     while True:
         try:
             msg = consumer.poll(timeout=1.0)
@@ -109,9 +105,11 @@ def run_kafka_consumer():
             value = json.loads(msg.value().decode("utf-8"))
 
             if topic == "fusion-alerts":
-                loop.run_until_complete(handle_fused_alert(value))
+                if main_loop:
+                    asyncio.run_coroutine_threadsafe(handle_fused_alert(value), main_loop)
             elif topic == "quantum-alerts":
-                loop.run_until_complete(handle_quantum_alert(value))
+                if main_loop:
+                    asyncio.run_coroutine_threadsafe(handle_quantum_alert(value), main_loop)
 
         except Exception as e:
             print(f"[background-consumer-err] Loop exception: {e}")
@@ -124,7 +122,6 @@ async def handle_fused_alert(payload: dict):
     async with AsyncSessionLocal() as session:
         # Create Alert model
         alert = Alert(
-            id=UUID(payload["alert_id"].replace("alert-", "")) if "alert-" in payload["alert_id"] else UUID(payload["alert_id"]),
             identity_id=payload["identity_id"],
             fusion_score=payload["fusion_score"],
             severity=payload["severity"],
@@ -218,7 +215,6 @@ async def handle_quantum_alert(payload: dict):
         if redis_client:
             redis_client.delete("kpi:dashboard_kpis")
 
-        # Broadcast quantum alert
         await ws_manager.broadcast({
             "type": "NEW_QUANTUM_ALERT",
             "quantum_alert": {
@@ -237,8 +233,12 @@ async def handle_quantum_alert(payload: dict):
         })
 
 
+main_loop = None
+
 @app.on_event("startup")
 def startup_event():
+    global main_loop
+    main_loop = asyncio.get_event_loop()
     # Run consumer in daemon thread so it exits with main thread
     t = threading.Thread(target=run_kafka_consumer, daemon=True)
     t.start()
@@ -491,7 +491,8 @@ async def get_dashboard_kpis(db: AsyncSession = Depends(get_db)):
 @app.get("/api/cases", response_model=List[CaseResponse])
 async def get_cases(status: Optional[str] = None, db: AsyncSession = Depends(get_db)):
     """Retrieve analyst queue of cases (Section 9 Case Management)."""
-    q = select(Case)
+    from sqlalchemy.orm import selectinload
+    q = select(Case).options(selectinload(Case.alert))
     if status:
         q = q.where(Case.status == status)
     q = q.order_by(desc(Case.created_at))
