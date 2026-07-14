@@ -15,6 +15,9 @@ class AlertBase(BaseModel):
     scenario_type: Optional[str] = None
     is_synthetic_positive: bool = False
 
+    class Config:
+        from_attributes = True
+
 
 class AlertCreate(AlertBase):
     id: Optional[UUID] = None
