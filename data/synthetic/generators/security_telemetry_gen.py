@@ -30,17 +30,32 @@ def generate_normal_security_event(state: IdentityState) -> dict:
         k=1,
     )[0]
 
+    ip_obj = random.choice(state.rich_ips) if state.rich_ips else {"ip_address": state.known_ip()}
+    device_obj = random.choice(state.rich_devices) if state.rich_devices else {"device_id": state.known_device()}
+    
+    geo = state.home_geo.copy()
+    if ip_obj.get("city") and ip_obj.get("country"):
+        geo = {"lat": geo["lat"], "lon": geo["lon"], "country": ip_obj["country"], "city": ip_obj["city"]}
+
+    risk_flags = []
+    if ip_obj.get("vpn_flag"):
+        risk_flags.append("VPN_DETECTED")
+    if ip_obj.get("tor_flag"):
+        risk_flags.append("TOR_NODE")
+    if not device_obj.get("trusted_flag", True):
+        risk_flags.append("UNTRUSTED_DEVICE")
+
     return {
         "event_id": new_uuid(),
         "identity_id": state.identity_id,
         "timestamp": jittered_now(),
         "event_type": event_type,
-        "source_ip": state.known_ip(),
-        "geo": {k: v for k, v in state.home_geo.items() if k != "city"},
-        "device_fingerprint": state.known_device(),
+        "source_ip": ip_obj["ip_address"],
+        "geo": geo,
+        "device_fingerprint": device_obj["device_id"],
         "is_new_device": False,
         "session_id": f"sess-{new_uuid()[:8]}",
-        "risk_flags": [],
+        "risk_flags": risk_flags,
     }
 
 

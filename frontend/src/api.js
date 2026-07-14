@@ -152,3 +152,23 @@ export function createAlertsWebSocket(onMessage) {
 
   return ws;
 }
+
+/**
+ * Fetch the rich identity profile for a given identity ID.
+ * Returns IdentityProfileResponse from /api/identities/{identity_id}.
+ */
+export async function fetchIdentityProfile(identityId) {
+  const res = await fetch(`${API_BASE}/identities/${encodeURIComponent(identityId)}`);
+  if (!res.ok) throw new Error('Identity profile not found');
+  return res.json();
+}
+
+/**
+ * Fetch the investigation timeline for a specific alert.
+ * Returns AlertTimelineResponse from /api/alerts/{id}/timeline.
+ */
+export async function fetchAlertTimeline(alertId) {
+  const res = await fetch(`${API_BASE}/alerts/${alertId}/timeline`);
+  if (!res.ok) throw new Error('Failed to fetch alert timeline');
+  return res.json();
+}

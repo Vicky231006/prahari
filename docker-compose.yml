@@ -108,6 +108,9 @@ services:
         condition: service_completed_successfully
     environment:
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - GATEWAY_URL=http://gateway:8080
     restart: unless-stopped
 
   # ────────────────────────────────────────────────────────────────

@@ -126,17 +126,31 @@ export default function Alerts() {
               {alerts.map(alert => (
                 <tr key={alert.id} onClick={() => setSelectedAlert(alert)}>
                   <td><SeverityBadge severity={alert.severity} /></td>
-                  <td className="font-mono font-600 text-sm">{alert.identity_id}</td>
-                  <td>{(alert.fusion_score * 100).toFixed(1)}%</td>
+                  <td style={{ fontFamily: 'IBM Plex Mono, monospace', fontWeight: 600, fontSize: '0.82rem' }}>
+                    {alert.identity_id}
+                  </td>
+                  <td style={{ fontWeight: 500 }}>{(alert.fusion_score * 100).toFixed(1)}%</td>
                   <td>
-                    <span className="text-xs text-muted truncate" style={{ maxWidth: '200px', display: 'inline-block' }}>
+                    <span style={{
+                      fontFamily: 'IBM Plex Mono, monospace',
+                      fontSize: '0.76rem',
+                      color: 'var(--text-secondary)',
+                      maxWidth: '220px',
+                      display: 'inline-block',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                      verticalAlign: 'middle',
+                    }}>
                       {alert.contributing_signals.join(', ')}
                     </span>
                   </td>
-                  <td className="text-xs text-muted">{new Date(alert.created_at).toLocaleTimeString()}</td>
+                  <td style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: '0.76rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                    {new Date(alert.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}
+                  </td>
                   <td>
-                    <span className="severity-badge" style={{ background: 'var(--surface-hover)' }}>
-                      {alert.status || 'open'}
+                    <span className="alerts-status-badge" data-status={alert.status || 'open'}>
+                      {(alert.status || 'open').toUpperCase()}
                     </span>
                   </td>
                 </tr>

@@ -138,17 +138,152 @@ class IdentityState:
     """
     Tracks per-identity state so generators produce coherent sequences:
     known devices, known beneficiaries, usual geo, etc.
+    Now enhanced with rich banking metadata.
     """
 
     def __init__(self, identity_id: str):
         self.identity_id = identity_id
-        self.known_devices = [random_device_fingerprint() for _ in range(random.randint(1, 3))]
-        self.known_beneficiaries = [f"BEN-{uuid.uuid4().hex[:8]}" for _ in range(random.randint(2, 8))]
+        
+        # 1. Base Metadata
+        first_names = ["Aarav", "Vihaan", "Aditya", "Arjun", "Sai", "Riya", "Aanya", "Diya", "Isha", "Neha", "Rahul", "Karan", "Priya", "Anjali", "Vikram"]
+        last_names = ["Sharma", "Patel", "Singh", "Kumar", "Gupta", "Deshmukh", "Joshi", "Reddy", "Nair", "Iyer"]
+        self.customer_name = f"{random.choice(first_names)} {random.choice(last_names)}"
+        
+        self.customer_type = random.choices(["Retail", "SME", "Corporate"], weights=[0.8, 0.15, 0.05])[0]
+        
+        if self.customer_type == "Retail":
+            self.customer_segment = random.choices(["Standard", "Premium", "HNI"], weights=[0.7, 0.25, 0.05])[0]
+            self.avg_txn_amount = lognormal_amount(mean=7.0, sigma=1.0)
+        elif self.customer_type == "SME":
+            self.customer_segment = random.choices(["Standard", "Premium"], weights=[0.6, 0.4])[0]
+            self.customer_name = f"{self.customer_name} Enterprises"
+            self.avg_txn_amount = lognormal_amount(mean=10.0, sigma=1.2)
+        else:
+            self.customer_segment = "Corporate"
+            self.customer_name = f"{self.customer_name} Corp Ltd."
+            self.avg_txn_amount = lognormal_amount(mean=12.0, sigma=1.5)
+            
+        self.kyc_status = random.choices(["Verified", "Pending", "Restricted"], weights=[0.9, 0.08, 0.02])[0]
+        self.account_age_days = random.randint(10, 3650)
+        
+        # Derive customer_since
+        base = datetime.now(timezone.utc)
+        since_date = base - timedelta(days=self.account_age_days)
+        self.customer_since = since_date.strftime("%Y-%m-%d")
+        
         self.home_geo = random.choice(GEO_POOL)
-        self.usual_ips = [f"103.{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}"
-                          for _ in range(random.randint(1, 3))]
-        self.avg_txn_amount = lognormal_amount(mean=8.0, sigma=1.0)
-        self.linked_identities: list[str] = []  # populated for insider-collusion scenario
+        self.primary_branch = f"Branch - {self.home_geo['city']}"
+        self.region = self.home_geo['city']
+        
+        # Risk & VIP
+        self.risk_tier = random.choices(["Low", "Medium", "High"], weights=[0.8, 0.15, 0.05])[0]
+        self.vip_flag = (self.customer_segment in ["HNI", "Premium"]) or (self.customer_type == "Corporate")
+        
+        # Financials
+        self.current_balance = self.avg_txn_amount * random.uniform(10.0, 100.0)
+        self.average_daily_volume = self.avg_txn_amount * random.uniform(1.0, 5.0)
+        self.monthly_txn_count = random.randint(5, 100) if self.customer_type == "Retail" else random.randint(50, 500)
+        self.dormant_account_flag = (random.random() < 0.02)
+        
+        # History
+        self.previous_alerts_count = random.randint(0, 5) if self.risk_tier == "Low" else random.randint(2, 20)
+        self.previous_cases_count = max(0, self.previous_alerts_count - random.randint(1, 5))
+        self.fraud_history_count = random.choices([0, 1, 2], weights=[0.95, 0.04, 0.01])[0]
+        
+        self.preferred_payment_method = random.choice(CHANNELS)
+        self.device_trust_score = random.uniform(0.6, 1.0)
+        
+        # 2. Rich Devices
+        self.rich_devices = []
+        self.known_devices = []
+        for _ in range(random.randint(1, 3)):
+            fp = random_device_fingerprint()
+            self.known_devices.append(fp)
+            self.rich_devices.append({
+                "device_id": fp,
+                "os": random.choice(["Windows 10", "macOS", "iOS", "Android"]),
+                "browser": random.choice(["Chrome", "Safari", "Firefox", "Edge"]),
+                "fingerprint": fp,
+                "first_seen": (base - timedelta(days=random.randint(10, 300))).isoformat(),
+                "last_seen": (base - timedelta(days=random.randint(0, 10))).isoformat(),
+                "times_used": random.randint(10, 1000),
+                "trusted_flag": random.random() > 0.1,
+                "risk_score": random.uniform(0.0, 0.3)
+            })
+            
+        # 3. Rich Beneficiaries
+        self.rich_beneficiaries = []
+        self.known_beneficiaries = []
+        for _ in range(random.randint(2, 8)):
+            bid = f"BEN-{uuid.uuid4().hex[:8]}"
+            self.known_beneficiaries.append(bid)
+            self.rich_beneficiaries.append({
+                "beneficiary_id": bid,
+                "name": f"{random.choice(first_names)} {random.choice(last_names)}",
+                "bank": random.choice(["HDFC", "SBI", "ICICI", "Axis", "Kotak"]),
+                "ifsc": f"BANK000{random.randint(1000, 9999)}",
+                "relationship": random.choice(["Family", "Friend", "Merchant", "Vendor", "Employee"]),
+                "first_added": (base - timedelta(days=random.randint(5, 300))).isoformat(),
+                "times_used": random.randint(1, 50),
+                "total_amount_received": self.avg_txn_amount * random.randint(1, 10),
+                "risk_score": random.uniform(0.0, 0.2)
+            })
+            
+        # 4. Rich IPs
+        self.rich_ips = []
+        self.usual_ips = []
+        for _ in range(random.randint(1, 3)):
+            ip = f"103.{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}"
+            self.usual_ips.append(ip)
+            self.rich_ips.append({
+                "ip_address": ip,
+                "country": "IN",
+                "city": self.region,
+                "asn": f"AS{random.randint(1000, 9999)}",
+                "isp": random.choice(["Jio", "Airtel", "Vi", "BSNL"]),
+                "vpn_flag": random.random() < 0.05,
+                "tor_flag": random.random() < 0.01,
+                "known_malicious_flag": False,
+                "times_seen": random.randint(50, 500)
+            })
+
+        self.linked_identities: list[str] = []
+
+    def get_profile_dict(self) -> dict:
+        """Return the rich profile dictionary compatible with IdentityProfileSyncRequest."""
+        return {
+            "identity_id": self.identity_id,
+            "customer_name": self.customer_name,
+            "customer_type": self.customer_type,
+            "customer_segment": self.customer_segment,
+            "kyc_status": self.kyc_status,
+            "account_age_days": self.account_age_days,
+            "customer_since": self.customer_since,
+            "primary_branch": self.primary_branch,
+            "region": self.region,
+            "risk_tier": self.risk_tier,
+            "current_balance": self.current_balance,
+            "average_daily_volume": self.average_daily_volume,
+            "monthly_txn_count": self.monthly_txn_count,
+            "dormant_account_flag": self.dormant_account_flag,
+            "vip_flag": self.vip_flag,
+            "previous_alerts_count": self.previous_alerts_count,
+            "previous_cases_count": self.previous_cases_count,
+            "fraud_history_count": self.fraud_history_count,
+            "typical_login_hours": [9, 10, 11, 14, 15, 18],
+            "typical_countries": ["IN"],
+            "typical_channels": CHANNELS,
+            "preferred_payment_method": self.preferred_payment_method,
+            "device_trust_score": self.device_trust_score,
+            "known_devices": self.rich_devices,
+            "known_beneficiaries": self.rich_beneficiaries,
+            "known_ips": self.rich_ips,
+            "avg_txn_amount": self.avg_txn_amount,
+            "txn_count": self.monthly_txn_count,
+            "login_time_distribution": {"morning": 0.4, "afternoon": 0.4, "evening": 0.2},
+            "risk_score": 0.5 if self.risk_tier == "High" else (0.2 if self.risk_tier == "Medium" else 0.05),
+            "last_seen_geo": self.home_geo
+        }
 
     def known_device(self) -> str:
         return random.choice(self.known_devices)

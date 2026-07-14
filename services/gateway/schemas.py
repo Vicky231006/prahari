@@ -165,3 +165,64 @@ class ScenarioInjectionRequest(BaseModel):
         ...,
         description="Type of scenario to run: ato, insider_collusion, credential_stuffing_ato, hndl_exposure"
     )
+
+# ── Identity Profile Schemas ───────────────────────────────────────────────────
+class IdentityProfileBase(BaseModel):
+    identity_id: str
+    customer_name: Optional[str] = None
+    customer_type: Optional[str] = None
+    customer_segment: Optional[str] = None
+    kyc_status: Optional[str] = None
+    account_age_days: int = 0
+    customer_since: Optional[str] = None
+    primary_branch: Optional[str] = None
+    region: Optional[str] = None
+    risk_tier: Optional[str] = None
+    current_balance: float = 0.0
+    average_daily_volume: float = 0.0
+    monthly_txn_count: int = 0
+    dormant_account_flag: bool = False
+    vip_flag: bool = False
+    previous_alerts_count: int = 0
+    previous_cases_count: int = 0
+    fraud_history_count: int = 0
+    typical_login_hours: List[Any] = Field(default_factory=list)
+    typical_countries: List[Any] = Field(default_factory=list)
+    typical_channels: List[Any] = Field(default_factory=list)
+    preferred_payment_method: Optional[str] = None
+    device_trust_score: float = 0.0
+    known_devices: List[Any] = Field(default_factory=list)
+    known_beneficiaries: List[Any] = Field(default_factory=list)
+    known_ips: List[Any] = Field(default_factory=list)
+    avg_txn_amount: float = 0.0
+    txn_count: int = 0
+    login_time_distribution: Dict[str, Any] = Field(default_factory=dict)
+    risk_score: float = 0.0
+    last_seen_geo: Dict[str, Any] = Field(default_factory=dict)
+
+class IdentityProfileResponse(IdentityProfileBase):
+    last_updated: datetime
+
+    class Config:
+        from_attributes = True
+
+class IdentityProfileSyncRequest(IdentityProfileBase):
+    pass
+
+
+# ── Alert Timeline Schemas ─────────────────────────────────────────────────────
+class AlertTimelineEvent(BaseModel):
+    timestamp: str
+    type: str
+    icon: str
+    severity: str
+    title: str
+    description: str
+    entity_id: Optional[str] = None
+    entity_type: Optional[str] = None
+
+
+class AlertTimelineResponse(BaseModel):
+    alert_id: str
+    identity_id: str
+    events: List[AlertTimelineEvent]

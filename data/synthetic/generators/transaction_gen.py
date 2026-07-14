@@ -19,36 +19,66 @@ from .base import (
     lognormal_amount,
     new_uuid,
     produce_event,
+    GEO_POOL,
+    FOREIGN_GEO_POOL,
 )
 
 
 def generate_normal_transaction(state: IdentityState) -> dict:
     """Generate a single normal (benign) transaction-events event."""
-    channel = random.choices(
-        CHANNELS,
-        weights=[0.55, 0.20, 0.05, 0.20],  # UPI dominates Indian retail
-        k=1,
-    )[0]
+    
+    # Base amounts and channels on customer type
+    if state.customer_type == "Retail":
+        channels = ["UPI", "IMPS", "ATM Withdrawal", "POS", "Merchant Payment"]
+        weights = [0.60, 0.15, 0.05, 0.10, 0.10]
+        base_amount = state.avg_txn_amount * random.uniform(0.1, 1.5)
+    elif state.customer_type == "SME":
+        channels = ["NEFT", "RTGS", "IMPS", "Cash Deposit", "Merchant Payment"]
+        weights = [0.40, 0.20, 0.20, 0.10, 0.10]
+        base_amount = state.avg_txn_amount * random.uniform(0.5, 2.5)
+    else:  # Corporate
+        channels = ["RTGS", "NEFT", "Salary Credit"]
+        weights = [0.60, 0.30, 0.10]
+        base_amount = state.avg_txn_amount * random.uniform(1.0, 5.0)
 
-    # Normal transactions: known beneficiaries, domestic, reasonable amounts
-    amount = lognormal_amount()
-    # Clip to channel limits (approximate RBI limits)
+    channel = random.choices(channels, weights=weights, k=1)[0]
+    
+    amount = base_amount
     if channel == "UPI":
         amount = min(amount, 100000)
     elif channel == "IMPS":
         amount = min(amount, 500000)
+        
+    merchant_name = None
+    location = state.home_geo
+    
+    if channel in ["POS", "Merchant Payment", "UPI"]:
+        merchants = ["Amazon", "Flipkart", "Swiggy", "Zomato", "Uber", "Ola", "Reliance Fresh", "D-Mart", "Starbucks", "Indian Oil"]
+        merchant_name = random.choice(merchants)
+        if random.random() < 0.2:  # Sometimes out of town
+            location = random.choice([g for g in GEO_POOL if g["city"] != state.home_geo["city"]] or [state.home_geo])
+            
+    is_cross_border = False
+    if state.vip_flag and random.random() < 0.05:
+        is_cross_border = True
+        location = random.choice(FOREIGN_GEO_POOL)
+
+    # Use a rich beneficiary object instead of just string if available
+    beneficiary = random.choice(state.rich_beneficiaries) if state.rich_beneficiaries else {"beneficiary_id": state.known_beneficiary()}
 
     return {
         "txn_id": new_uuid(),
         "identity_id": state.identity_id,
         "timestamp": jittered_now(),
-        "amount": amount,
-        "currency": "INR",
+        "amount": round(amount, 2),
+        "currency": "INR" if not is_cross_border else random.choice(["USD", "EUR", "GBP"]),
         "channel": channel,
-        "beneficiary_id": state.known_beneficiary(),
+        "merchant_name": merchant_name,
+        "location": location,
+        "beneficiary_id": beneficiary["beneficiary_id"],
         "beneficiary_is_new": False,
         "session_id": f"sess-{new_uuid()[:8]}",
-        "is_cross_border": False,
+        "is_cross_border": is_cross_border,
     }
 
 

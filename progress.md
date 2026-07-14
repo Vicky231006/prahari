@@ -239,3 +239,64 @@ All 4 tests passing as of commit `257d8b8`:
 | `services/gateway/Dockerfile` | Python 3.12 slim, runs uvicorn on port 8080, copies `data/` for demo injection |
 | `services/fusion_classifier/Dockerfile` | Python 3.12 slim, copies `fusion_model.joblib`, runs uvicorn on port 8081 |
 | `services/rag_explanation/Dockerfile` | Python 3.12 slim, runs uvicorn on port 8082 |
+
+---
+
+## Phase 12: Extended Synthetic Banking Dataset (COMPLETE ✅)
+
+> Last updated: 2026-07-15
+
+### What was built
+
+**DB schema (`scripts/init_db.sql`, `services/gateway/models.py`)**
+- New `identity_profiles` table with 25+ columns covering: `customer_name`, `customer_type`, `customer_segment`, `kyc_status`, `account_age_days`, `customer_since`, `primary_branch`, `region`, `risk_tier`, `current_balance`, `average_daily_volume`, `monthly_txn_count`, `dormant_account_flag`, `vip_flag`, `previous_alerts_count`, `previous_cases_count`, `fraud_history_count`, `device_trust_score`, `known_devices` (JSONB), `known_beneficiaries` (JSONB), `known_ips` (JSONB), `login_time_distribution`, `risk_score`, `last_seen_geo`
+
+**Generators (`data/synthetic/generators/`)**
+- `base.py` — `IdentityState` class now generates rich banking metadata for all 200 identities at startup
+- `transaction_gen.py` and `security_telemetry_gen.py` — use identity metadata to generate realistic correlated events (branch geo, typical channels, known devices)
+- `run_generators.py` — at startup, syncs all 200 identity profiles to Postgres via `POST /api/internal/identities/sync`
+
+**Gateway (`services/gateway/main.py`, `schemas.py`)**
+- `POST /api/internal/identities/sync` — bulk upsert endpoint for generator startup seeding
+- `GET /api/identities/{identity_id}` — fetch rich identity profile
+- `IdentityProfileResponse` Pydantic schema — exposes all 25+ fields
+
+**SOC Workflow endpoints**
+- `POST /api/alerts/{id}/escalate` — changes Case status to `escalated`, writes ESCALATE audit entry, auto-creates Case if missing
+- `POST /api/alerts/{id}/dismiss` — changes Case status to `dismissed`, writes DISMISS audit entry
+- Both endpoints invalidate the Redis KPI cache (rate-limited to 5s cooldown)
+
+---
+
+## Phase 13: Investigation Workspace + Timeline API (COMPLETE ✅)
+
+> Last updated: 2026-07-15
+
+### What was built
+
+**Pipeline (`streaming/fusion/job.py`)**
+- Fusion alert Kafka payload now includes `raw_events: { security: [...], transactions: [...] }` — the actual events that triggered the alert
+- Prevents raw events from being silently discarded after Redis window expiry
+
+**DB (`scripts/init_db.sql`, `services/gateway/models.py`)**
+- `alerts.raw_events JSONB` column added (via `ALTER TABLE IF NOT EXISTS` for live DBs)
+
+**Gateway (`services/gateway/main.py`, `schemas.py`)**
+- `handle_fused_alert` now saves `raw_events` from the Kafka payload
+- `GET /api/audit` extended with optional `entity_id` query param for scoped filtering
+- `GET /api/alerts/{id}/timeline` — new endpoint that joins alert raw events, identity profile history, case lifecycle, and audit trail into a single chronologically sorted `AlertTimelineEvent[]` list. Business logic kept in the backend (justified: 4 heterogeneous joins, normalisation, sorting)
+- `AlertTimelineEvent` and `AlertTimelineResponse` Pydantic schemas added
+
+**Frontend (`frontend/src/`)**
+- `api.js` — added `fetchIdentityProfile(identityId)` and `fetchAlertTimeline(alertId)`
+- `index.css` — added styles for: `.drawer--workspace` (960px wide), `.workspace-tabs`, `.workspace-tab`, `.risk-profile-grid`, `.risk-profile-field`, `.chip`, `.chip-list`, `.timeline`, `.timeline-event`, `.timeline-dot`, `.timeline-card`, `.alerts-status-badge`
+- `ExplanationDrawer.jsx` — refactored into **Investigation Workspace** with three tabs:
+  - **Explanation** — original RAG streaming panel + contributing signals (fully preserved)
+  - **Risk Profile** — `CustomerRiskProfile` component fetching `GET /api/identities/{id}`; displays 18+ fields across Identity Overview, Financial Profile, Risk & History, Known Devices, Known Beneficiaries
+  - **Timeline** — `InvestigationTimeline` component fetching `GET /api/alerts/{id}/timeline`; vertical timeline with gradient connecting line, color-coded dots per severity, chronological cards with type badge + timestamp
+- `Alerts.jsx` — table styling fixed to match reference design: monospace Identity ID and signals, `IBM Plex Mono` time column, `alerts-status-badge` class with outlined OPEN/ESCALATED/DISMISSED states in uppercase
+
+### Key decisions
+- New `GET /api/alerts/{id}/timeline` endpoint is justified because joining and sorting 4 heterogeneous data sources is backend logic — not something to replicate per-client
+- `ExplanationDrawer.jsx` was refactored in-place (not replaced with a new component) to preserve routing, state management, and import paths across `App.jsx` and `Alerts.jsx`
+- `alerts-status-badge` uses CSS attribute selectors (`data-status`) to avoid adding per-status utility classes to the JSX

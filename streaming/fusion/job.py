@@ -121,6 +121,10 @@ class IdentityFusionJob:
                 "severity": severity,
                 "contributing_signals": all_signals,
                 "features": features,
+                "raw_events": {
+                    "security": security_events,
+                    "transactions": transaction_events,
+                },
                 "window_start": min(
                     [ev.get("timestamp") for ev in security_events + transaction_events if ev.get("timestamp")] or [datetime.now(timezone.utc).isoformat()]
                 ),

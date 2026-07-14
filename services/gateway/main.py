@@ -58,6 +58,10 @@ from .schemas import (
     PaginatedCases,
     PaginatedAuditTrail,
     PaginatedQuantumSessions,
+    IdentityProfileResponse,
+    IdentityProfileSyncRequest,
+    AlertTimelineEvent,
+    AlertTimelineResponse,
 )
 from .ws_manager import ws_manager
 
@@ -178,6 +182,7 @@ async def handle_fused_alert(payload: dict) -> None:
             fusion_score=payload["fusion_score"],
             severity=payload["severity"],
             contributing_signals=payload["contributing_signals"],
+            raw_events=payload.get("raw_events", []),
             window_start=datetime.fromisoformat(payload["window_start"].replace("Z", "+00:00")),
             window_end=datetime.fromisoformat(payload["window_end"].replace("Z", "+00:00")),
             scenario_type=payload.get("scenario_type"),
@@ -757,10 +762,14 @@ async def get_cases(
 async def get_audit_trail(
     limit: int = Query(default=50, ge=1, le=200),
     before_id: Optional[UUID] = Query(default=None),
+    entity_id: Optional[UUID] = Query(default=None, description="Filter by entity UUID (e.g. alert id)"),
     db: AsyncSession = Depends(get_db),
 ) -> PaginatedAuditTrail:
     """Retrieve immutable audit trail with cursor pagination (Section 9 Level 3)."""
     query = select(AuditTrail)
+
+    if entity_id:
+        query = query.where(AuditTrail.entity_id == entity_id)
 
     if before_id:
         cursor_q = select(AuditTrail.created_at, AuditTrail.id).where(AuditTrail.id == before_id)
@@ -984,6 +993,232 @@ async def trigger_scenario(req: ScenarioInjectionRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Scenario execution error: {e}")
 
+
+# ── /api/identities/{identity_id} ──────────────────────────────────────────────
+@app.get("/api/identities/{identity_id}", response_model=IdentityProfileResponse)
+async def get_identity(identity_id: str, db: AsyncSession = Depends(get_db)):
+    """Fetch rich identity profile."""
+    q = select(IdentityProfile).where(IdentityProfile.identity_id == identity_id)
+    res = await db.execute(q)
+    profile = res.scalar_one_or_none()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Identity not found")
+    return profile
+
+
+# ── /api/alerts/{id}/timeline ─────────────────────────────────────────────────
+@app.get("/api/alerts/{alert_id}/timeline", response_model=AlertTimelineResponse)
+async def get_alert_timeline(alert_id: UUID, db: AsyncSession = Depends(get_db)) -> AlertTimelineResponse:
+    """Construct a chronological investigation timeline for a single alert.
+
+    This endpoint is justified because assembling the timeline requires joining
+    four heterogeneous data sources (alert raw events, identity profile history,
+    case lifecycle, and audit trail) and normalising them into a single sorted
+    list.  Doing this in the frontend would either require 4 round-trips with
+    per-page cursors or would duplicate the join/sort logic across clients.
+    """
+    # 1. Fetch the alert with its linked case
+    result = await db.execute(
+        select(Alert, Case.id, Case.status, Case.created_at, Case.assigned_to, Case.notes)
+        .outerjoin(Case, Alert.id == Case.alert_id)
+        .where(Alert.id == alert_id)
+    )
+    row = result.first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Alert not found")
+
+    alert_obj, case_id, case_status, case_created_at, case_assigned_to, case_notes = row
+
+    # 2. Fetch identity profile for historical context
+    profile_result = await db.execute(
+        select(IdentityProfile).where(IdentityProfile.identity_id == alert_obj.identity_id)
+    )
+    profile = profile_result.scalar_one_or_none()
+
+    # 3. Fetch audit trail entries scoped to this alert
+    audit_result = await db.execute(
+        select(AuditTrail)
+        .where(AuditTrail.entity_id == alert_id)
+        .order_by(AuditTrail.created_at)
+    )
+    audit_entries = audit_result.scalars().all()
+
+    # 4. Build timeline events list
+    events: list[dict] = []
+
+    # ── Historical anchor: account opening ──────────────────────────────────
+    if profile and profile.customer_since:
+        try:
+            # customer_since is stored as a year string e.g. "2019"
+            since_ts = datetime(
+                int(profile.customer_since), 1, 1, tzinfo=timezone.utc
+            ).isoformat()
+        except (ValueError, TypeError):
+            since_ts = alert_obj.window_start.isoformat()
+
+        events.append({
+            "timestamp": since_ts,
+            "type": "ACCOUNT_HISTORY",
+            "icon": "user",
+            "severity": "info",
+            "title": f"Account Opened – {profile.primary_branch or 'Unknown Branch'}",
+            "description": (
+                f"{profile.customer_type or 'Retail'} customer since {profile.customer_since}. "
+                f"KYC: {profile.kyc_status or 'N/A'}. Risk Tier: {profile.risk_tier or 'N/A'}."
+            ),
+            "entity_id": alert_obj.identity_id,
+            "entity_type": "identity",
+        })
+
+    # ── Historical fraud anchor ─────────────────────────────────────────────
+    if profile and profile.fraud_history_count and profile.fraud_history_count > 0:
+        events.append({
+            "timestamp": alert_obj.window_start.isoformat(),  # approximate
+            "type": "FRAUD_HISTORY",
+            "icon": "shield-alert",
+            "severity": "high",
+            "title": f"Historical Fraud Record: {profile.fraud_history_count} prior incident(s)",
+            "description": (
+                f"Identity has {profile.previous_alerts_count or 0} prior alerts "
+                f"and {profile.previous_cases_count or 0} escalated cases on record."
+            ),
+            "entity_id": alert_obj.identity_id,
+            "entity_type": "identity",
+        })
+
+    # ── Raw security events from the fusion window ──────────────────────────
+    raw = alert_obj.raw_events or {}
+    security_evs = raw.get("security", []) if isinstance(raw, dict) else []
+    transaction_evs = raw.get("transactions", []) if isinstance(raw, dict) else []
+
+    for ev in security_evs:
+        flags = ev.get("risk_flags", [])
+        severity = "critical" if ("TOR_NODE" in flags or "IMPOSSIBLE_TRAVEL" in flags) else \
+                   "high" if flags else "info"
+        events.append({
+            "timestamp": ev.get("timestamp", alert_obj.window_start.isoformat()),
+            "type": "SECURITY_EVENT",
+            "icon": "shield-x",
+            "severity": severity,
+            "title": f"Security: {ev.get('event_type', 'event').replace('_', ' ').title()}",
+            "description": (
+                f"Source IP: {ev.get('source_ip', 'N/A')} "
+                f"Device: {ev.get('device_fingerprint', 'N/A')[:12]}... "
+                f"Flags: {', '.join(flags) if flags else 'None'}"
+            ),
+            "entity_id": ev.get("event_id", ""),
+            "entity_type": "security_event",
+        })
+
+    for ev in transaction_evs:
+        amount = ev.get("amount", 0)
+        channel = ev.get("channel", "unknown")
+        is_cross = ev.get("is_cross_border", False)
+        is_new_ben = ev.get("beneficiary_is_new", False)
+        severity = "high" if (is_cross or is_new_ben) else "medium" if amount > 50000 else "info"
+        events.append({
+            "timestamp": ev.get("timestamp", alert_obj.window_start.isoformat()),
+            "type": "TRANSACTION_EVENT",
+            "icon": "arrow-right-left",
+            "severity": severity,
+            "title": f"Transaction: ₹{amount:,.2f} via {channel}",
+            "description": (
+                f"Beneficiary: {ev.get('beneficiary_id', 'N/A')} "
+                f"{'[NEW] ' if is_new_ben else ''}"
+                f"{'[Cross-border] ' if is_cross else ''}"
+                f"Status: {ev.get('status', 'N/A')}"
+            ),
+            "entity_id": ev.get("transaction_id", ""),
+            "entity_type": "transaction",
+        })
+
+    # ── Alert generation ────────────────────────────────────────────────────
+    sev_label = alert_obj.severity.upper()
+    events.append({
+        "timestamp": alert_obj.created_at.isoformat(),
+        "type": "ALERT_GENERATED",
+        "icon": "zap",
+        "severity": alert_obj.severity,
+        "title": f"{sev_label} Fusion Alert — Score {alert_obj.fusion_score * 100:.1f}%",
+        "description": (
+            f"Fusion engine correlated {len(security_evs)} security + {len(transaction_evs)} "
+            f"transaction events. Signals: {', '.join(alert_obj.contributing_signals[:4])}"
+            f"{'...' if len(alert_obj.contributing_signals) > 4 else ''}"
+        ),
+        "entity_id": str(alert_obj.id),
+        "entity_type": "alert",
+    })
+
+    # ── Case creation ───────────────────────────────────────────────────────
+    if case_id:
+        events.append({
+            "timestamp": case_created_at.isoformat() if case_created_at else alert_obj.created_at.isoformat(),
+            "type": "CASE_CREATED",
+            "icon": "folder-open",
+            "severity": "info",
+            "title": f"Case Created — Status: {case_status or 'open'}",
+            "description": (
+                f"Case assigned to: {case_assigned_to or 'Unassigned'}. "
+                f"Notes: {case_notes or 'None'}"
+            ),
+            "entity_id": str(case_id),
+            "entity_type": "case",
+        })
+
+    # ── Analyst audit actions ───────────────────────────────────────────────
+    for audit in audit_entries:
+        events.append({
+            "timestamp": audit.created_at.isoformat(),
+            "type": f"AUDIT_{audit.action}",
+            "icon": "clipboard-check",
+            "severity": "info",
+            "title": f"Analyst Action: {audit.action.title()}",
+            "description": (
+                f"By {audit.actor}. "
+                f"{audit.details.get('notes') or ''}"
+            ).strip(),
+            "entity_id": str(audit.id),
+            "entity_type": "audit",
+        })
+
+    # Sort all events chronologically
+    events.sort(key=lambda e: e["timestamp"])
+
+    return AlertTimelineResponse(
+        alert_id=str(alert_id),
+        identity_id=alert_obj.identity_id,
+        events=[AlertTimelineEvent(**e) for e in events],
+    )
+
+# ── /api/internal/identities/sync ──────────────────────────────────────────────
+@app.post("/api/internal/identities/sync")
+async def sync_identities(req: List[IdentityProfileSyncRequest], db: AsyncSession = Depends(get_db)):
+    """Bulk upsert rich identity profiles from generator startup."""
+    from sqlalchemy.dialects.postgresql import insert
+    
+    # We use PostgreSQL UPSERT (ON CONFLICT DO UPDATE)
+    values = [r.dict() for r in req]
+    if not values:
+        return {"status": "ok", "inserted": 0}
+        
+    stmt = insert(IdentityProfile).values(values)
+    
+    # Build update dict mapping column names to excluded columns (the new values)
+    update_dict = {
+        col.name: getattr(stmt.excluded, col.name)
+        for col in IdentityProfile.__table__.columns
+        if col.name != "identity_id"
+    }
+    
+    stmt = stmt.on_conflict_do_update(
+        index_elements=["identity_id"],
+        set_=update_dict
+    )
+    
+    await db.execute(stmt)
+    await db.commit()
+    
+    return {"status": "success", "upserted": len(values)}
 
 # ── WebSocket ──────────────────────────────────────────────────────────────────
 @app.websocket("/ws/alerts")
