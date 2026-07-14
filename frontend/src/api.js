@@ -57,6 +57,44 @@ export async function performCaseAction(caseId, action, actor = 'analyst', notes
 }
 
 /**
+ * Escalate an alert to Tier 2.
+ * Creates a linked Case if one does not already exist.
+ * Writes an ESCALATE audit entry.
+ * Returns the updated AlertResponse { ...alert, status: 'escalated' }.
+ */
+export async function escalateAlert(alertId, actor = 'Tier 1 Analyst', notes = '') {
+  const res = await fetch(`${API_BASE}/alerts/${alertId}/escalate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ actor, notes }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Unknown error' }));
+    throw new Error(err.detail || 'Escalation failed');
+  }
+  return res.json();
+}
+
+/**
+ * Dismiss an alert as a False Positive.
+ * Creates a linked Case if one does not already exist.
+ * Writes a DISMISS audit entry including the analyst reason.
+ * Returns the updated AlertResponse { ...alert, status: 'dismissed' }.
+ */
+export async function dismissAlert(alertId, actor = 'Tier 1 Analyst', notes = '') {
+  const res = await fetch(`${API_BASE}/alerts/${alertId}/dismiss`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ actor, notes }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Unknown error' }));
+    throw new Error(err.detail || 'Dismiss failed');
+  }
+  return res.json();
+}
+
+/**
  * Fetch a page of audit trail entries.
  * Returns { items: AuditTrailResponse[], next_cursor: string | null }
  */

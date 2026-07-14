@@ -44,6 +44,7 @@ from .database import get_db, AsyncSessionLocal
 from .models import Alert, Case, AuditTrail, QuantumAlert, IdentityProfile
 from .schemas import (
     AlertResponse,
+    AlertActionRequest,
     CaseActionRequest,
     CaseResponse,
     AuditTrailResponse,
@@ -506,6 +507,152 @@ async def get_alert_detail(alert_id: UUID, db: AsyncSession = Depends(get_db)) -
         created_at=alert_obj.created_at,
         updated_at=alert_obj.updated_at,
         status=status or "open",
+    )
+
+
+# ── /api/alerts/{id}/escalate ─────────────────────────────────────────────────
+@app.post("/api/alerts/{alert_id}/escalate", response_model=AlertResponse)
+async def escalate_alert(
+    alert_id: UUID,
+    req: AlertActionRequest,
+    db: AsyncSession = Depends(get_db),
+) -> AlertResponse:
+    """SOC Workflow: Escalate an alert to Tier 2.
+
+    1. Validates the alert exists.
+    2. Finds the linked Case — or creates one if it doesn't exist yet.
+    3. Sets the Case status to 'escalated'.
+    4. Writes an immutable ESCALATE audit entry.
+    5. Rate-limits KPI cache invalidation.
+    6. Returns the updated AlertResponse (status = 'escalated').
+
+    This lets the frontend call a single alert-scoped endpoint without
+    needing to know the Case ID upfront.
+    """
+    # Fetch alert
+    alert_row = (await db.execute(select(Alert).where(Alert.id == alert_id))).scalar_one_or_none()
+    if not alert_row:
+        raise HTTPException(status_code=404, detail="Alert not found")
+
+    # Find or create the linked Case
+    case_row = (await db.execute(select(Case).where(Case.alert_id == alert_id))).scalar_one_or_none()
+    if not case_row:
+        case_row = Case(alert_id=alert_id, status="open")
+        db.add(case_row)
+        await db.flush()  # populate case_row.id before audit reference
+
+    old_status = case_row.status
+    case_row.status = "escalated"
+    case_row.assigned_to = req.actor
+    case_row.notes = req.notes
+    case_row.updated_at = datetime.now(timezone.utc)
+
+    audit = AuditTrail(
+        entity_type="alert",
+        entity_id=alert_id,
+        action="ESCALATE",
+        actor=req.actor,
+        details={
+            "alert_id": str(alert_id),
+            "identity_id": alert_row.identity_id,
+            "severity": alert_row.severity,
+            "old_status": old_status,
+            "new_status": "escalated",
+            "notes": req.notes,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        },
+    )
+    db.add(audit)
+    await db.commit()
+
+    _maybe_invalidate_kpi_cache()
+
+    return AlertResponse(
+        id=alert_row.id,
+        identity_id=alert_row.identity_id,
+        fusion_score=alert_row.fusion_score,
+        severity=alert_row.severity,
+        contributing_signals=alert_row.contributing_signals,
+        window_start=alert_row.window_start,
+        window_end=alert_row.window_end,
+        scenario_type=alert_row.scenario_type,
+        is_synthetic_positive=alert_row.is_synthetic_positive,
+        explanation=alert_row.explanation,
+        regulatory_controls=alert_row.regulatory_controls,
+        created_at=alert_row.created_at,
+        updated_at=alert_row.updated_at,
+        status="escalated",
+    )
+
+
+# ── /api/alerts/{id}/dismiss ───────────────────────────────────────────────────
+@app.post("/api/alerts/{alert_id}/dismiss", response_model=AlertResponse)
+async def dismiss_alert(
+    alert_id: UUID,
+    req: AlertActionRequest,
+    db: AsyncSession = Depends(get_db),
+) -> AlertResponse:
+    """SOC Workflow: Dismiss an alert as a False Positive.
+
+    1. Validates the alert exists.
+    2. Finds or creates the linked Case.
+    3. Sets the Case status to 'dismissed'.
+    4. Writes an immutable DISMISS audit entry (includes analyst reason).
+    5. Rate-limits KPI cache invalidation.
+    6. Returns the updated AlertResponse (status = 'dismissed').
+    """
+    alert_row = (await db.execute(select(Alert).where(Alert.id == alert_id))).scalar_one_or_none()
+    if not alert_row:
+        raise HTTPException(status_code=404, detail="Alert not found")
+
+    case_row = (await db.execute(select(Case).where(Case.alert_id == alert_id))).scalar_one_or_none()
+    if not case_row:
+        case_row = Case(alert_id=alert_id, status="open")
+        db.add(case_row)
+        await db.flush()
+
+    old_status = case_row.status
+    case_row.status = "dismissed"
+    case_row.assigned_to = req.actor
+    case_row.notes = req.notes
+    case_row.updated_at = datetime.now(timezone.utc)
+
+    audit = AuditTrail(
+        entity_type="alert",
+        entity_id=alert_id,
+        action="DISMISS",
+        actor=req.actor,
+        details={
+            "alert_id": str(alert_id),
+            "identity_id": alert_row.identity_id,
+            "severity": alert_row.severity,
+            "reason": "False Positive",
+            "old_status": old_status,
+            "new_status": "dismissed",
+            "notes": req.notes or "Dismissed as False Positive",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        },
+    )
+    db.add(audit)
+    await db.commit()
+
+    _maybe_invalidate_kpi_cache()
+
+    return AlertResponse(
+        id=alert_row.id,
+        identity_id=alert_row.identity_id,
+        fusion_score=alert_row.fusion_score,
+        severity=alert_row.severity,
+        contributing_signals=alert_row.contributing_signals,
+        window_start=alert_row.window_start,
+        window_end=alert_row.window_end,
+        scenario_type=alert_row.scenario_type,
+        is_synthetic_positive=alert_row.is_synthetic_positive,
+        explanation=alert_row.explanation,
+        regulatory_controls=alert_row.regulatory_controls,
+        created_at=alert_row.created_at,
+        updated_at=alert_row.updated_at,
+        status="dismissed",
     )
 
 

@@ -9,6 +9,7 @@ import QuantumRisk from './pages/QuantumRisk';
 import Cases from './pages/Cases';
 import ScenarioRunner from './pages/ScenarioRunner';
 import { createAlertsWebSocket } from './api';
+import { ToastContainer } from './components/ExplanationDrawer';
 
 // Check if demo mode is active by fetching the config endpoint. 
 // For this 4-day build, we can just fetch it once on mount or assume true if env says so.
@@ -37,6 +38,7 @@ export default function App() {
 
   return (
     <div className="app-layout">
+      <ToastContainer />
       <Header wsConnected={wsConnected} />
       <Sidebar demoMode={isDemoMode} />
       <main className="app-main" id="app-main">

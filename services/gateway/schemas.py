@@ -148,6 +148,17 @@ class DashboardKPIsResponse(BaseModel):
     last_updated: datetime
 
 
+# ── Alert Workflow Action Schema ───────────────────────────────────────────────
+class AlertActionRequest(BaseModel):
+    """Request body for POST /api/alerts/{id}/escalate and /api/alerts/{id}/dismiss.
+
+    The action itself is expressed in the URL path, so only the actor name and
+    optional notes are needed here.
+    """
+    actor: str = Field("Tier 1 Analyst", description="Username or role performing the action")
+    notes: Optional[str] = Field(None, description="Optional notes, e.g. dismiss reason")
+
+
 # ── Scenario Injection Schema ──────────────────────────────────────────────────
 class ScenarioInjectionRequest(BaseModel):
     scenario_type: str = Field(
