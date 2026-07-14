@@ -70,15 +70,54 @@ CREATE TABLE IF NOT EXISTS identity_profiles (
     last_updated            TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Indexes for dashboard queries (Section 5 — KPI aggregates)
-CREATE INDEX idx_alerts_identity   ON alerts(identity_id);
-CREATE INDEX idx_alerts_severity   ON alerts(severity);
-CREATE INDEX idx_alerts_created    ON alerts(created_at DESC);
-CREATE INDEX idx_alerts_score      ON alerts(fusion_score DESC);
-CREATE INDEX idx_quantum_session   ON quantum_alerts(session_id);
-CREATE INDEX idx_quantum_hndl      ON quantum_alerts(is_hndl_exposed) WHERE is_hndl_exposed = TRUE;
-CREATE INDEX idx_quantum_created   ON quantum_alerts(created_at DESC);
-CREATE INDEX idx_cases_status      ON cases(status);
-CREATE INDEX idx_cases_alert       ON cases(alert_id);
-CREATE INDEX idx_audit_entity      ON audit_trail(entity_type, entity_id);
-CREATE INDEX idx_audit_created     ON audit_trail(created_at DESC);
+-- ─── Original single-column indexes ──────────────────────────────────────────
+-- Kept as-is; covered by the compound indexes below for most queries,
+-- but retained for any ad-hoc filters that land on a single column.
+CREATE INDEX IF NOT EXISTS idx_alerts_identity   ON alerts(identity_id);
+CREATE INDEX IF NOT EXISTS idx_alerts_severity   ON alerts(severity);
+CREATE INDEX IF NOT EXISTS idx_alerts_created    ON alerts(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_alerts_score      ON alerts(fusion_score DESC);
+CREATE INDEX IF NOT EXISTS idx_quantum_session   ON quantum_alerts(session_id);
+CREATE INDEX IF NOT EXISTS idx_quantum_hndl      ON quantum_alerts(is_hndl_exposed) WHERE is_hndl_exposed = TRUE;
+CREATE INDEX IF NOT EXISTS idx_quantum_created   ON quantum_alerts(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_cases_status      ON cases(status);
+CREATE INDEX IF NOT EXISTS idx_cases_alert       ON cases(alert_id);
+CREATE INDEX IF NOT EXISTS idx_audit_entity      ON audit_trail(entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_audit_created     ON audit_trail(created_at DESC);
+
+-- ─── NEW: Composite cursor indexes for keyset / seek-method pagination ────────
+-- Cursor queries use WHERE (created_at, id) < (cursor_ts, cursor_id)
+-- ORDER BY created_at DESC, id DESC LIMIT N.
+-- A compound index on (created_at DESC, id DESC) lets Postgres satisfy both
+-- the ORDER BY and the range filter with a single index scan — O(log n + page)
+-- regardless of how many rows exist before the cursor.
+
+CREATE INDEX IF NOT EXISTS idx_alerts_cursor
+    ON alerts(created_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_quantum_cursor
+    ON quantum_alerts(created_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_cases_cursor
+    ON cases(created_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_audit_cursor
+    ON audit_trail(created_at DESC, id DESC);
+
+-- ─── NEW: Covering index for KPI GROUP BY query ───────────────────────────────
+-- The dashboard KPI endpoint computes top-risk identities via:
+--   SELECT identity_id, MAX(fusion_score), COUNT(*)
+--   FROM alerts GROUP BY identity_id ORDER BY MAX(fusion_score) DESC LIMIT 5
+-- This covering index on (identity_id, fusion_score DESC) lets Postgres resolve
+-- the entire GROUP BY + MAX aggregate from the index without touching the heap.
+
+CREATE INDEX IF NOT EXISTS idx_alerts_identity_score
+    ON alerts(identity_id, fusion_score DESC);
+
+-- ─── NEW: Composite index for active-alert count join ─────────────────────────
+-- The KPI active_count query joins cases on (status = 'open', alert_id).
+-- A composite index on (status, alert_id) supports both the WHERE filter and
+-- the FK join without a separate heap fetch on every KPI refresh.
+
+CREATE INDEX IF NOT EXISTS idx_cases_status_alert
+    ON cases(status, alert_id);

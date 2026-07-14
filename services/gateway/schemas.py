@@ -3,7 +3,8 @@ from datetime import datetime
 from typing import List, Optional, Dict, Any
 from uuid import UUID
 
-# ── Alert Schemas ──
+
+# ── Alert Schemas ──────────────────────────────────────────────────────────────
 class AlertBase(BaseModel):
     identity_id: str
     fusion_score: float
@@ -14,10 +15,12 @@ class AlertBase(BaseModel):
     scenario_type: Optional[str] = None
     is_synthetic_positive: bool = False
 
+
 class AlertCreate(AlertBase):
     id: Optional[UUID] = None
     explanation: Optional[str] = None
     regulatory_controls: Optional[List[Dict[str, Any]]] = None
+
 
 class AlertResponse(AlertBase):
     id: UUID
@@ -30,11 +33,24 @@ class AlertResponse(AlertBase):
     class Config:
         from_attributes = True
 
-# ── Case Schemas ──
+
+class PaginatedAlerts(BaseModel):
+    """Paginated wrapper for /api/alerts.
+
+    `next_cursor` is the `id` of the last item in `items`.  Pass it as
+    `before_id` on the next request to get the following page.  When
+    `next_cursor` is null there are no more pages.
+    """
+    items: List[AlertResponse]
+    next_cursor: Optional[str] = None
+
+
+# ── Case Schemas ───────────────────────────────────────────────────────────────
 class CaseActionRequest(BaseModel):
     action: str = Field(..., description="Action to perform: acknowledge, escalate, dismiss")
     actor: str = Field("analyst", description="Username or role of the analyst")
     notes: Optional[str] = Field(None, description="Optional notes explaining the action")
+
 
 class CaseResponse(BaseModel):
     id: UUID
@@ -49,7 +65,14 @@ class CaseResponse(BaseModel):
     class Config:
         from_attributes = True
 
-# ── Audit Trail Schemas ──
+
+class PaginatedCases(BaseModel):
+    """Paginated wrapper for /api/cases."""
+    items: List[CaseResponse]
+    next_cursor: Optional[str] = None
+
+
+# ── Audit Trail Schemas ────────────────────────────────────────────────────────
 class AuditTrailResponse(BaseModel):
     id: UUID
     entity_type: str
@@ -62,7 +85,14 @@ class AuditTrailResponse(BaseModel):
     class Config:
         from_attributes = True
 
-# ── Quantum / TLS Schemas ──
+
+class PaginatedAuditTrail(BaseModel):
+    """Paginated wrapper for /api/audit."""
+    items: List[AuditTrailResponse]
+    next_cursor: Optional[str] = None
+
+
+# ── Quantum / TLS Schemas ──────────────────────────────────────────────────────
 class QuantumAlertResponse(BaseModel):
     id: UUID
     session_id: str
@@ -79,23 +109,33 @@ class QuantumAlertResponse(BaseModel):
     class Config:
         from_attributes = True
 
+
 class QuantumStatsResponse(BaseModel):
     legacy_count: int
     pqc_ready_count: int
     hybrid_count: int
     hndl_exposed_count: int
 
-# ── Dashboard KPI Schemas ──
+
+class PaginatedQuantumSessions(BaseModel):
+    """Paginated wrapper for /api/quantum/sessions."""
+    items: List[QuantumAlertResponse]
+    next_cursor: Optional[str] = None
+
+
+# ── Dashboard KPI Schemas ──────────────────────────────────────────────────────
 class SeverityCount(BaseModel):
     low: int = 0
     medium: int = 0
     high: int = 0
     critical: int = 0
 
+
 class TopRiskIdentity(BaseModel):
     identity_id: str
     risk_score: float
     alert_count: int
+
 
 class DashboardKPIsResponse(BaseModel):
     active_alerts_count: int
@@ -104,6 +144,10 @@ class DashboardKPIsResponse(BaseModel):
     quantum_stats: QuantumStatsResponse
     last_updated: datetime
 
-# ── Scenario Injection Schema ──
+
+# ── Scenario Injection Schema ──────────────────────────────────────────────────
 class ScenarioInjectionRequest(BaseModel):
-    scenario_type: str = Field(..., description="Type of scenario to run: ato, insider_collusion, credential_stuffing_ato, hndl_exposure")
+    scenario_type: str = Field(
+        ...,
+        description="Type of scenario to run: ato, insider_collusion, credential_stuffing_ato, hndl_exposure"
+    )

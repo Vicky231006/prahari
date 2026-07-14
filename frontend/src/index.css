@@ -518,6 +518,8 @@ body::after { background: var(--orb-2); }
   animation: spin 0.6s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
+/* Utility: apply spin animation to any inline element (e.g. a refresh icon) */
+.spin { animation: spin 0.6s linear infinite; }
 
 .loading-center {
   display: flex;

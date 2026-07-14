@@ -1,12 +1,22 @@
 const API_BASE = '/api';
 
-export async function fetchAlerts(filters = {}) {
+/**
+ * Fetch a page of fused alerts.
+ *
+ * The backend now returns { items, next_cursor } instead of a plain array.
+ * Pass `beforeId` (the value of `next_cursor` from the previous response) to
+ * fetch the next page.  When next_cursor is null there are no more pages.
+ */
+export async function fetchAlerts(filters = {}, { limit = 50, beforeId = null } = {}) {
   const params = new URLSearchParams();
   if (filters.severity) params.set('severity', filters.severity);
   if (filters.identity_id) params.set('identity_id', filters.identity_id);
+  params.set('limit', String(limit));
+  if (beforeId) params.set('before_id', beforeId);
+
   const res = await fetch(`${API_BASE}/alerts?${params}`);
   if (!res.ok) throw new Error('Failed to fetch alerts');
-  return res.json();
+  return res.json(); // { items: AlertResponse[], next_cursor: string | null }
 }
 
 export async function fetchAlertDetail(alertId) {
@@ -21,9 +31,17 @@ export async function fetchDashboardKPIs() {
   return res.json();
 }
 
-export async function fetchCases(status) {
-  const params = status ? `?status=${status}` : '';
-  const res = await fetch(`${API_BASE}/cases${params}`);
+/**
+ * Fetch a page of cases.
+ * Returns { items: CaseResponse[], next_cursor: string | null }
+ */
+export async function fetchCases(status, { limit = 50, beforeId = null } = {}) {
+  const params = new URLSearchParams();
+  if (status) params.set('status', status);
+  params.set('limit', String(limit));
+  if (beforeId) params.set('before_id', beforeId);
+
+  const res = await fetch(`${API_BASE}/cases?${params}`);
   if (!res.ok) throw new Error('Failed to fetch cases');
   return res.json();
 }
@@ -38,14 +56,30 @@ export async function performCaseAction(caseId, action, actor = 'analyst', notes
   return res.json();
 }
 
-export async function fetchAuditTrail() {
-  const res = await fetch(`${API_BASE}/audit`);
+/**
+ * Fetch a page of audit trail entries.
+ * Returns { items: AuditTrailResponse[], next_cursor: string | null }
+ */
+export async function fetchAuditTrail({ limit = 50, beforeId = null } = {}) {
+  const params = new URLSearchParams();
+  params.set('limit', String(limit));
+  if (beforeId) params.set('before_id', beforeId);
+
+  const res = await fetch(`${API_BASE}/audit?${params}`);
   if (!res.ok) throw new Error('Failed to fetch audit trail');
   return res.json();
 }
 
-export async function fetchQuantumSessions() {
-  const res = await fetch(`${API_BASE}/quantum/sessions`);
+/**
+ * Fetch a page of quantum/TLS sessions.
+ * Returns { items: QuantumAlertResponse[], next_cursor: string | null }
+ */
+export async function fetchQuantumSessions({ limit = 100, beforeId = null } = {}) {
+  const params = new URLSearchParams();
+  params.set('limit', String(limit));
+  if (beforeId) params.set('before_id', beforeId);
+
+  const res = await fetch(`${API_BASE}/quantum/sessions?${params}`);
   if (!res.ok) throw new Error('Failed to fetch quantum sessions');
   return res.json();
 }
