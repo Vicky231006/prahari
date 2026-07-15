@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { fetchQuantumSessions, fetchDashboardKPIs } from '../api';
 import { Binary, ShieldAlert, Key, ChevronDown } from 'lucide-react';
 import SeverityBadge from '../components/SeverityBadge';
+import QuantumWorkspaceDrawer from '../components/QuantumWorkspaceDrawer';
 
 export default function QuantumRisk() {
   const { data: kpis } = useQuery({
@@ -14,6 +15,9 @@ export default function QuantumRisk() {
   // Cursor pagination state for the sessions table
   const [cursor, setCursor] = useState(null);
   const [cursorHistory, setCursorHistory] = useState([]);
+  
+  // Selected session for workspace drawer
+  const [selectedSession, setSelectedSession] = useState(null);
 
   const { data, isLoading, isFetching } = useQuery({
     queryKey: ['quantum_sessions', cursor],
@@ -107,7 +111,7 @@ export default function QuantumRisk() {
             </thead>
             <tbody>
               {sessions.map(s => (
-                <tr key={s.id}>
+                <tr key={s.id} onClick={() => setSelectedSession(s)}>
                   <td>
                     {s.classification === 'legacy' ? <SeverityBadge severity="high" /> : <SeverityBadge severity="low" />}
                   </td>
@@ -144,6 +148,14 @@ export default function QuantumRisk() {
             Load more <ChevronDown size={13} />
           </button>
         </div>
+      )}
+
+      {/* Drawer Workspace */}
+      {selectedSession && (
+        <QuantumWorkspaceDrawer
+          session={selectedSession}
+          onClose={() => setSelectedSession(null)}
+        />
       )}
     </div>
   );
