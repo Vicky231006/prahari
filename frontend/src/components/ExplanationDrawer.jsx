@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { escalateAlert, dismissAlert, fetchIdentityProfile, fetchAlertTimeline } from '../api';
 import SeverityBadge from './SeverityBadge';
-import InvestigationGraph from './InvestigationGraph';
+import { useNavigate } from 'react-router-dom';
 
 // ── Lightweight toast system ────────────────────────────────────────────────────
 let _toastId = 0;
@@ -466,9 +466,9 @@ function ExplanationPanel({ alert }) {
   );
 }
 
-// ── Main Investigation Workspace ─────────────────────────────────────────────
 export default function ExplanationDrawer({ alert, onClose, onActionComplete }) {
   const [activeTab, setActiveTab] = useState('explanation');
+  const navigate = useNavigate();
 
   // Workflow state
   const [escalating, setEscalating] = useState(false);
@@ -598,7 +598,15 @@ export default function ExplanationDrawer({ alert, onClose, onActionComplete }) 
           {activeTab === 'explanation' && <ExplanationPanel alert={alert} />}
           {activeTab === 'profile' && <CustomerRiskProfile identityId={alert.identity_id} />}
           {activeTab === 'timeline' && <InvestigationTimeline alertId={alert.id} />}
-          {activeTab === 'graph' && <InvestigationGraph identityId={alert.identity_id} />}
+          {activeTab === 'graph' && (
+            <div className="empty-state" style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+              <Globe className="empty-state__icon" size={32} />
+              <div className="empty-state__text mb-16">The Investigation Graph has moved to a dedicated page for better performance and scalability.</div>
+              <button className="btn btn--primary" onClick={() => navigate(`/graph/${alert.identity_id}`)}>
+                Open Investigation Graph
+              </button>
+            </div>
+          )}
         </div>
 
         {/* ── Footer action buttons (preserved from original drawer) ── */}

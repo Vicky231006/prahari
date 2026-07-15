@@ -42,6 +42,7 @@ const NODE_CFG = {
   transaction: { bg: '#06b6d4', border: '#0891b2', shape: 'hexagon',          icon: '💸', size: 48 },
   alert:       { bg: '#ef4444', border: '#b91c1c', shape: 'star',             icon: '⚡', size: 56 },
   case:        { bg: '#8b5cf6', border: '#6d28d9', shape: 'roundrectangle',   icon: '📁', size: 48 },
+  cluster:     { bg: '#4b5563', border: '#374151', shape: 'roundrectangle',   icon: '📂', size: 52 },
 };
 const EDGE_COLORS = { low: '#475569', medium: '#f59e0b', high: '#ef4444', critical: '#dc2626' };
 const EDGE_WIDTHS  = { low: 1.5, medium: 2.5, high: 4, critical: 5 };
@@ -68,7 +69,7 @@ const STYLESHEET = (() => {
         'text-background-opacity': 1,
         'text-background-padding': '3px',
         'text-background-shape': 'roundrectangle',
-        'text-opacity': 0,          // hidden until zoom threshold (set dynamically)
+        'min-zoomed-font-size': 6,
         'transition-property': 'opacity, border-width, border-color',
         'transition-duration': '120ms',
         'z-index': 1,
@@ -167,11 +168,11 @@ function runLayout(cy, layoutName, fit = false) {
     padding: 60,
     nodeDimensionsIncludeLabels: false,
     packComponents: true,
-    nodeRepulsion: 8500,
-    idealEdgeLength: 130,
-    edgeElasticity: 0.4,
-    gravity: 0.3,
-    numIter: 1200,             // 2500 → 1200, still very good
+    nodeRepulsion: 4500,
+    idealEdgeLength: 50,
+    edgeElasticity: 0.45,
+    gravity: 0.25,
+    numIter: 1200,
     tile: true,
     gravityRange: 3.5,
   } : {
@@ -191,11 +192,7 @@ function runLayout(cy, layoutName, fit = false) {
   return layout;
 }
 
-// ── Zoom-responsive label visibility ─────────────────────────────────────────
-function applyLabelVisibility(cy, zoom) {
-  const opacity = zoom < 0.55 ? 0 : zoom > 0.9 ? 1 : (zoom - 0.55) / 0.35;
-  cy.nodes().style('text-opacity', opacity);
-}
+
 
 // ── Node Inspector (stores PLAIN DATA, not live Cytoscape object) ─────────────
 function NodeInspector({ nodeData, onClose }) {
@@ -245,6 +242,17 @@ function NodeInspector({ nodeData, onClose }) {
 // ── Legend ───────────────────────────────────────────────────────────────────
 function GraphLegend() {
   const [open, setOpen] = useState(false);
+
+  const renderShape = (s) => {
+    const base = { width: 12, height: 12, background: s.bg, border: `2px solid ${s.border}`, display: 'inline-block', flexShrink: 0, boxSizing: 'border-box' };
+    if (s.shape === 'ellipse') base.borderRadius = '50%';
+    else if (s.shape === 'roundrectangle') base.borderRadius = 3;
+    else if (s.shape === 'diamond') { base.transform = 'rotate(45deg) scale(0.85)'; }
+    else if (s.shape === 'hexagon') { base.clipPath = 'polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)'; base.borderRadius = 0; }
+    else if (s.shape === 'star') { base.clipPath = 'polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%)'; base.borderRadius = 0; }
+    return <span style={base} />;
+  };
+
   return (
     <div className="graph-legend-btn">
       <button className="btn btn--secondary btn--small" onClick={() => setOpen(o => !o)} style={{ gap: 5 }}>
@@ -254,9 +262,11 @@ function GraphLegend() {
         <div className="graph-legend-panel">
           <div style={{ fontWeight: 700, fontSize: '0.73rem', marginBottom: 8, color: 'var(--text-primary)' }}>Node Types</div>
           {Object.entries(NODE_CFG).map(([type, s]) => (
-            <div key={type} style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 4 }}>
-              <span style={{ width: 10, height: 10, borderRadius: 2, background: s.bg, border: `2px solid ${s.border}`, display: 'inline-block', flexShrink: 0 }} />
-              <span style={{ fontSize: '0.7rem', textTransform: 'capitalize', color: 'var(--text-secondary)' }}>{type}</span>
+            <div key={type} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
+              <div style={{ width: 14, height: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                {renderShape(s)}
+              </div>
+              <span style={{ fontSize: '0.7rem', textTransform: 'capitalize', color: 'var(--text-secondary)', flex: 1 }}>{type}</span>
               <span style={{ fontSize: '0.85rem' }}>{s.icon}</span>
             </div>
           ))}
@@ -278,7 +288,7 @@ function GraphLegend() {
 }
 
 // ── Main Component ────────────────────────────────────────────────────────────
-export default function InvestigationGraph({ identityId }) {
+export default function InvestigationGraph({ identityId, titleComponent }) {
   const containerRef  = useRef(null);
   const cyRef         = useRef(null);
   const layoutNameRef = useRef('cose');
@@ -337,9 +347,7 @@ export default function InvestigationGraph({ identityId }) {
       // Run initial layout
       runLayout(cy, name, true);
 
-      // ── Zoom: show/hide labels smoothly ──────────────────────────────────
-      cy.on('zoom', () => applyLabelVisibility(cy, cy.zoom()));
-      applyLabelVisibility(cy, cy.zoom());
+
 
       // ── Click (single tap) → inspect only, NO layout ─────────────────────
       cy.on('tap', 'node', (e) => {
@@ -354,11 +362,13 @@ export default function InvestigationGraph({ identityId }) {
         });
 
         // Highlight neighbourhood using Cytoscape API only — no React state for this
-        cy.elements().removeClass('highlighted faded selected');
-        const hood = n.closedNeighborhood();
-        cy.elements().not(hood).addClass('faded');
-        hood.addClass('highlighted');
-        n.addClass('selected');
+        cy.batch(() => {
+          cy.elements().removeClass('highlighted faded selected');
+          const hood = n.closedNeighborhood();
+          cy.elements().not(hood).addClass('faded');
+          hood.addClass('highlighted');
+          n.addClass('selected');
+        });
       });
 
       // ── Double-tap → expand neighbours ───────────────────────────────────
@@ -368,7 +378,7 @@ export default function InvestigationGraph({ identityId }) {
         const ntype = n.data('nodeType');
 
         // Only expandable types
-        if (!['identity', 'alert', 'device', 'ip'].includes(ntype)) return;
+        if (!['identity', 'alert', 'device', 'ip', 'cluster'].includes(ntype)) return;
         if (loadedIds.current.has(nid) || isExpandingRef.current) return;
 
         isExpandingRef.current = true;
@@ -407,11 +417,12 @@ export default function InvestigationGraph({ identityId }) {
             animationDuration: 350,
             fit: false,
             padding: 40,
-            nodeRepulsion: 6000,
-            idealEdgeLength: 110,
-            gravity: 0.3,
+            nodeRepulsion: 4500,
+            idealEdgeLength: 50,
+            gravity: 0.25,
             numIter: 600,
             randomize: false,
+            packComponents: true,
           });
           subLayout.run();
           subLayout.on('layoutstop', () => {
@@ -455,19 +466,22 @@ export default function InvestigationGraph({ identityId }) {
   useEffect(() => {
     const cy = cyRef.current;
     if (!cy) return;
-    cy.elements().removeClass('highlighted faded selected');
-    if (!searchText.trim()) return;
-    const q = searchText.toLowerCase();
-    const matches = cy.nodes().filter(n =>
-      (n.data('label') || '').toLowerCase().includes(q) ||
-      (n.data('sublabel') || '').toLowerCase().includes(q) ||
-      (n.data('nodeType') || '').toLowerCase().includes(q)
-    );
-    if (matches.length > 0) {
-      cy.elements().addClass('faded');
-      matches.closedNeighborhood().removeClass('faded').addClass('highlighted');
-      matches.addClass('selected highlighted');
-    }
+    
+    cy.batch(() => {
+      cy.elements().removeClass('highlighted faded selected');
+      if (!searchText.trim()) return;
+      const q = searchText.toLowerCase();
+      const matches = cy.nodes().filter(n =>
+        (n.data('label') || '').toLowerCase().includes(q) ||
+        (n.data('sublabel') || '').toLowerCase().includes(q) ||
+        (n.data('nodeType') || '').toLowerCase().includes(q)
+      );
+      if (matches.length > 0) {
+        cy.elements().addClass('faded');
+        matches.closedNeighborhood().removeClass('faded').addClass('highlighted');
+        matches.addClass('selected highlighted');
+      }
+    });
   }, [searchText]);
 
   // ── Toolbar actions ───────────────────────────────────────────────────────
@@ -476,13 +490,11 @@ export default function InvestigationGraph({ identityId }) {
     const cy = cyRef.current;
     if (!cy) return;
     cy.zoom({ level: cy.zoom() * 1.3, renderedPosition: { x: cy.width() / 2, y: cy.height() / 2 } });
-    applyLabelVisibility(cy, cy.zoom() * 1.3);
   }, []);
   const zoomOut   = useCallback(() => {
     const cy = cyRef.current;
     if (!cy) return;
     cy.zoom({ level: cy.zoom() * 0.76, renderedPosition: { x: cy.width() / 2, y: cy.height() / 2 } });
-    applyLabelVisibility(cy, cy.zoom() * 0.76);
   }, []);
   const clearAll  = useCallback(() => {
     cyRef.current?.elements().removeClass('highlighted faded selected');
@@ -508,6 +520,7 @@ export default function InvestigationGraph({ identityId }) {
       {/* ── Toolbar ─────────────────────────────────────────────────────── */}
       <div className="graph-toolbar">
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1 }}>
+          {titleComponent}
           {/* Search */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--input-bg)', borderRadius: 'var(--radius-sm)', border: 'var(--surface-border)', padding: '4px 10px' }}>
             <Search size={12} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />

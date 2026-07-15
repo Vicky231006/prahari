@@ -8,6 +8,7 @@ import Alerts from './pages/Alerts';
 import QuantumRisk from './pages/QuantumRisk';
 import Cases from './pages/Cases';
 import ScenarioRunner from './pages/ScenarioRunner';
+import GraphPage from './pages/GraphPage';
 import { createAlertsWebSocket } from './api';
 import { ToastContainer } from './components/ExplanationDrawer';
 
@@ -37,19 +38,26 @@ export default function App() {
   }, [queryClient]);
 
   return (
-    <div className="app-layout">
+    <>
       <ToastContainer />
-      <Header wsConnected={wsConnected} />
-      <Sidebar demoMode={isDemoMode} />
-      <main className="app-main" id="app-main">
-        <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/alerts" element={<Alerts />} />
-          <Route path="/quantum" element={<QuantumRisk />} />
-          <Route path="/cases" element={<Cases />} />
-          {isDemoMode && <Route path="/scenario-runner" element={<ScenarioRunner />} />}
-        </Routes>
-      </main>
-    </div>
+      <Routes>
+        <Route path="/graph/:identityId" element={<GraphPage />} />
+        <Route path="*" element={
+          <div className="app-layout">
+            <Header wsConnected={wsConnected} />
+            <Sidebar demoMode={isDemoMode} />
+            <main className="app-main" id="app-main">
+              <Routes>
+                <Route path="/" element={<Dashboard />} />
+                <Route path="/alerts" element={<Alerts />} />
+                <Route path="/quantum" element={<QuantumRisk />} />
+                <Route path="/cases" element={<Cases />} />
+                {isDemoMode && <Route path="/scenario-runner" element={<ScenarioRunner />} />}
+              </Routes>
+            </main>
+          </div>
+        } />
+      </Routes>
+    </>
   );
 }
