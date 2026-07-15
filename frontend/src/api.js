@@ -172,3 +172,13 @@ export async function fetchAlertTimeline(alertId) {
   if (!res.ok) throw new Error('Failed to fetch alert timeline');
   return res.json();
 }
+
+/**
+ * Fetch the investigation graph for a specific identity.
+ * Returns GraphResponse from /api/graph/{identity_id}.
+ */
+export async function fetchInvestigationGraph(identityId) {
+  const res = await fetch(`${API_BASE}/graph/${encodeURIComponent(identityId)}`);
+  if (!res.ok) throw new Error('Failed to fetch investigation graph');
+  return res.json();
+}

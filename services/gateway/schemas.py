@@ -226,3 +226,29 @@ class AlertTimelineResponse(BaseModel):
     alert_id: str
     identity_id: str
     events: List[AlertTimelineEvent]
+
+
+# ── Investigation Graph Schemas ────────────────────────────────────────────────
+class GraphNode(BaseModel):
+    id: str
+    type: str          # identity | device | ip | beneficiary | transaction | alert | case
+    label: str
+    sublabel: Optional[str] = None
+    risk: str = "low"  # low | medium | high | critical
+    data: Dict[str, Any] = Field(default_factory=dict)
+
+
+class GraphEdge(BaseModel):
+    id: str
+    source: str
+    target: str
+    type: str          # uses_device | logged_in_from | transferred_to | added_beneficiary | triggered_alert | case_link | same_ip | same_device
+    label: str
+    risk: str = "low"  # low | medium | high
+    data: Dict[str, Any] = Field(default_factory=dict)
+
+
+class GraphResponse(BaseModel):
+    identity_id: str
+    nodes: List[GraphNode]
+    edges: List[GraphEdge]

@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { escalateAlert, dismissAlert, fetchIdentityProfile, fetchAlertTimeline } from '../api';
 import SeverityBadge from './SeverityBadge';
+import InvestigationGraph from './InvestigationGraph';
 
 // ── Lightweight toast system ────────────────────────────────────────────────────
 let _toastId = 0;
@@ -533,6 +534,7 @@ export default function ExplanationDrawer({ alert, onClose, onActionComplete }) 
     { id: 'explanation', label: 'Explanation', icon: <FileText size={13} /> },
     { id: 'profile', label: 'Risk Profile', icon: <User size={13} /> },
     { id: 'timeline', label: 'Timeline', icon: <Activity size={13} /> },
+    { id: 'graph', label: 'Graph', icon: <Globe size={13} /> },
   ];
 
   return (
@@ -586,10 +588,17 @@ export default function ExplanationDrawer({ alert, onClose, onActionComplete }) 
         </div>
 
         {/* ── Tab Body ── */}
-        <div className="drawer__body">
+        <div
+          className="drawer__body"
+          style={activeTab === 'graph'
+            ? { padding: 0, overflow: 'hidden', flex: 1, display: 'flex', flexDirection: 'column' }
+            : {}
+          }
+        >
           {activeTab === 'explanation' && <ExplanationPanel alert={alert} />}
           {activeTab === 'profile' && <CustomerRiskProfile identityId={alert.identity_id} />}
           {activeTab === 'timeline' && <InvestigationTimeline alertId={alert.id} />}
+          {activeTab === 'graph' && <InvestigationGraph identityId={alert.identity_id} />}
         </div>
 
         {/* ── Footer action buttons (preserved from original drawer) ── */}

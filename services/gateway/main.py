@@ -62,6 +62,9 @@ from .schemas import (
     IdentityProfileSyncRequest,
     AlertTimelineEvent,
     AlertTimelineResponse,
+    GraphNode,
+    GraphEdge,
+    GraphResponse,
 )
 from .ws_manager import ws_manager
 
@@ -1188,6 +1191,256 @@ async def get_alert_timeline(alert_id: UUID, db: AsyncSession = Depends(get_db))
         alert_id=str(alert_id),
         identity_id=alert_obj.identity_id,
         events=[AlertTimelineEvent(**e) for e in events],
+    )
+
+
+# ── /api/graph/{identity_id} ──────────────────────────────────────────────────
+@app.get("/api/graph/{identity_id}", response_model=GraphResponse)
+async def get_investigation_graph(identity_id: str, db: AsyncSession = Depends(get_db)) -> GraphResponse:
+    """Build the investigation graph for an identity.
+
+    Nodes: identity, device, ip, beneficiary, transaction, alert, case
+    Edges: uses_device, logged_in_from, transferred_to, added_beneficiary,
+           triggered_alert, case_link, same_ip, same_device
+
+    All data originates from stored identity profiles, alerts (including raw_events),
+    and linked cases — nothing is invented by this endpoint.
+    """
+    nodes: list[dict] = []
+    edges: list[dict] = []
+    node_ids: set[str] = set()   # dedup guard
+    edge_ids: set[str] = set()
+
+    def add_node(node_id: str, **kwargs):
+        if node_id not in node_ids:
+            node_ids.add(node_id)
+            nodes.append({"id": node_id, **kwargs})
+
+    def add_edge(edge_id: str, source: str, target: str, **kwargs):
+        if edge_id not in edge_ids and source in node_ids and target in node_ids:
+            edge_ids.add(edge_id)
+            edges.append({"id": edge_id, "source": source, "target": target, **kwargs})
+
+    # ── 1. Identity root node ───────────────────────────────────────────────
+    profile_res = await db.execute(
+        select(IdentityProfile).where(IdentityProfile.identity_id == identity_id)
+    )
+    profile = profile_res.scalar_one_or_none()
+
+    risk_level = "low"
+    if profile:
+        if profile.risk_tier in ("HIGH", "CRITICAL") or profile.fraud_history_count > 0:
+            risk_level = "critical" if profile.fraud_history_count > 0 else "high"
+        elif profile.risk_tier == "MEDIUM":
+            risk_level = "medium"
+
+    add_node(
+        identity_id,
+        type="identity",
+        label=profile.customer_name if profile else identity_id,
+        sublabel=f"{profile.customer_type} · {profile.risk_tier}" if profile else identity_id,
+        risk=risk_level,
+        data={
+            "kyc_status": profile.kyc_status if profile else None,
+            "segment": profile.customer_segment if profile else None,
+            "branch": profile.primary_branch if profile else None,
+            "region": profile.region if profile else None,
+            "risk_score": profile.risk_score if profile else 0,
+            "fraud_history": profile.fraud_history_count if profile else 0,
+        }
+    )
+
+    # ── 2. Known devices from identity profile ──────────────────────────────
+    if profile and isinstance(profile.known_devices, list):
+        for dev in profile.known_devices[:8]:  # cap at 8 devices
+            dev_id = dev.get("device_id") or dev.get("fingerprint") if isinstance(dev, dict) else str(dev)
+            if not dev_id:
+                continue
+            node_id = f"device:{dev_id}"
+            trusted = dev.get("trusted_flag", True) if isinstance(dev, dict) else True
+            dev_risk = "low" if trusted else "high"
+            os_label = dev.get("os", "Device") if isinstance(dev, dict) else "Device"
+            browser = dev.get("browser", "") if isinstance(dev, dict) else ""
+            add_node(
+                node_id,
+                type="device",
+                label=f"{os_label} / {browser}".strip(" /"),
+                sublabel=dev_id[:16] + "…" if len(dev_id) > 16 else dev_id,
+                risk=dev_risk,
+                data={"trusted": trusted, "risk_score": dev.get("risk_score", 0) if isinstance(dev, dict) else 0},
+            )
+            add_edge(
+                f"e:id-dev:{dev_id}",
+                identity_id, node_id,
+                type="uses_device",
+                label="Uses Device",
+                risk=dev_risk,
+            )
+
+    # ── 3. Known IPs from profile ───────────────────────────────────────────
+    if profile and isinstance(profile.known_ips, list):
+        for ip in profile.known_ips[:6]:
+            ip_str = ip if isinstance(ip, str) else str(ip)
+            ip_node = f"ip:{ip_str}"
+            add_node(ip_node, type="ip", label=ip_str, sublabel="Known IP", risk="low", data={})
+            add_edge(
+                f"e:id-ip:{ip_str}",
+                identity_id, ip_node,
+                type="logged_in_from",
+                label="Logged In From",
+                risk="low",
+            )
+
+    # ── 4. Known beneficiaries ─────────────────────────────────────────────
+    if profile and isinstance(profile.known_beneficiaries, list):
+        for ben in profile.known_beneficiaries[:10]:
+            if isinstance(ben, dict):
+                ben_id = ben.get("beneficiary_id") or ben.get("account_number") or str(ben.get("beneficiary_name", ""))
+                ben_label = ben.get("beneficiary_name") or ben_id
+                ben_bank = ben.get("bank", "")
+            else:
+                ben_id = str(ben)
+                ben_label = str(ben)
+                ben_bank = ""
+            if not ben_id:
+                continue
+            ben_node = f"ben:{ben_id}"
+            add_node(ben_node, type="beneficiary", label=ben_label, sublabel=ben_bank, risk="low", data={"bank": ben_bank})
+            add_edge(
+                f"e:id-ben:{ben_id}",
+                identity_id, ben_node,
+                type="added_beneficiary",
+                label="Transferred To",
+                risk="low",
+            )
+
+    # ── 5. Alerts for this identity (last 10) ──────────────────────────────
+    alerts_res = await db.execute(
+        select(Alert, Case.id, Case.status)
+        .outerjoin(Case, Alert.id == Case.alert_id)
+        .where(Alert.identity_id == identity_id)
+        .order_by(desc(Alert.created_at))
+        .limit(10)
+    )
+    alert_rows = alerts_res.all()
+
+    seen_ips: set = set()
+    seen_devices: set = set()
+
+    for alert_row, case_id, case_status in alert_rows:
+        alert_node = f"alert:{alert_row.id}"
+        alert_risk = alert_row.severity if alert_row.severity in ("low", "medium", "high", "critical") else "medium"
+        add_node(
+            alert_node,
+            type="alert",
+            label=f"{alert_row.severity.upper()} Alert",
+            sublabel=f"Score {alert_row.fusion_score * 100:.0f}%",
+            risk=alert_risk,
+            data={
+                "fusion_score": alert_row.fusion_score,
+                "severity": alert_row.severity,
+                "scenario_type": alert_row.scenario_type,
+                "created_at": alert_row.created_at.isoformat(),
+                "signals": alert_row.contributing_signals,
+            }
+        )
+        add_edge(
+            f"e:id-alert:{alert_row.id}",
+            identity_id, alert_node,
+            type="triggered_alert",
+            label="Triggered Alert",
+            risk=alert_risk,
+        )
+
+        # Case node linked to this alert
+        if case_id:
+            case_node = f"case:{case_id}"
+            case_risk = "high" if case_status == "escalated" else "low"
+            add_node(
+                case_node,
+                type="case",
+                label=f"Case ({case_status or 'open'})",
+                sublabel=str(case_id)[:8] + "…",
+                risk=case_risk,
+                data={"status": case_status, "case_id": str(case_id)},
+            )
+            add_edge(
+                f"e:alert-case:{case_id}",
+                alert_node, case_node,
+                type="case_link",
+                label="Has Case",
+                risk=case_risk,
+            )
+
+        # Raw events from alert: extract transaction and security event nodes
+        raw = alert_row.raw_events or {}
+        if isinstance(raw, dict):
+            for txn in (raw.get("transactions") or [])[:5]:
+                txn_id = txn.get("transaction_id") or txn.get("txn_id")
+                if not txn_id:
+                    continue
+                txn_node = f"txn:{txn_id}"
+                amount = txn.get("amount", 0)
+                channel = txn.get("channel", "?")
+                is_cross = txn.get("is_cross_border", False)
+                is_new_ben = txn.get("beneficiary_is_new", False)
+                txn_risk = "high" if (is_cross or is_new_ben) else "medium" if amount > 50000 else "low"
+                add_node(
+                    txn_node,
+                    type="transaction",
+                    label=f"₹{amount:,.0f} via {channel}",
+                    sublabel="Cross-border" if is_cross else ("New Beneficiary" if is_new_ben else channel),
+                    risk=txn_risk,
+                    data={"amount": amount, "channel": channel, "is_cross_border": is_cross, "beneficiary_is_new": is_new_ben},
+                )
+                add_edge(
+                    f"e:id-txn:{txn_id}",
+                    identity_id, txn_node,
+                    type="transferred_to",
+                    label=f"₹{amount:,.0f}",
+                    risk=txn_risk,
+                )
+                # link txn → alert
+                add_edge(
+                    f"e:txn-alert:{txn_id}:{alert_row.id}",
+                    txn_node, alert_node,
+                    type="triggered_alert",
+                    label="Flagged In",
+                    risk=txn_risk,
+                )
+
+            for sec in (raw.get("security") or [])[:5]:
+                ip = sec.get("source_ip")
+                dev_fp = sec.get("device_fingerprint")
+                flags = sec.get("risk_flags", [])
+                ev_risk = "critical" if ("TOR_NODE" in flags or "IMPOSSIBLE_TRAVEL" in flags) else "high" if flags else "low"
+
+                # IP → alert edges (avoid duplicating IP nodes already added from profile)
+                if ip:
+                    ip_node = f"ip:{ip}"
+                    if ip not in seen_ips:
+                        seen_ips.add(ip)
+                        if ip_node not in node_ids:
+                            add_node(ip_node, type="ip", label=ip, sublabel="Session IP", risk=ev_risk, data={"flags": flags})
+                            add_edge(f"e:id-ip:{ip}", identity_id, ip_node, type="logged_in_from", label="Logged In From", risk=ev_risk)
+                    if ip_node in node_ids:
+                        add_edge(f"e:ip-alert:{ip}:{alert_row.id}", ip_node, alert_node, type="same_ip", label="Same IP", risk=ev_risk)
+
+                # Device → alert edges
+                if dev_fp:
+                    dev_node = f"device:{dev_fp}"
+                    if dev_fp not in seen_devices:
+                        seen_devices.add(dev_fp)
+                        if dev_node not in node_ids:
+                            add_node(dev_node, type="device", label="Unknown Device", sublabel=dev_fp[:16] + "…", risk=ev_risk, data={"flags": flags})
+                            add_edge(f"e:id-dev:{dev_fp}", identity_id, dev_node, type="uses_device", label="Uses Device", risk=ev_risk)
+                    if dev_node in node_ids:
+                        add_edge(f"e:dev-alert:{dev_fp}:{alert_row.id}", dev_node, alert_node, type="same_device", label="Used In Alert", risk=ev_risk)
+
+    return GraphResponse(
+        identity_id=identity_id,
+        nodes=[GraphNode(**n) for n in nodes],
+        edges=[GraphEdge(**e) for e in edges],
     )
 
 # ── /api/internal/identities/sync ──────────────────────────────────────────────
