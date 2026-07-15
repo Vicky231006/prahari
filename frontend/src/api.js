@@ -98,7 +98,12 @@ export async function dismissAlert(alertId, actor = 'Tier 1 Analyst', notes = ''
  * Fetch a page of audit trail entries.
  * Returns { items: AuditTrailResponse[], next_cursor: string | null }
  */
-export async function fetchAuditTrail({ limit = 50, beforeId = null } = {}) {
+export async function fetchAuditTrail({ limit = 50, beforeId = null, isQuantum = false } = {}) {
+  if (isQuantum) {
+    const qAudits = JSON.parse(localStorage.getItem('quantum_audits') || '[]');
+    return { items: qAudits, next_cursor: null };
+  }
+
   const params = new URLSearchParams();
   params.set('limit', String(limit));
   if (beforeId) params.set('before_id', beforeId);
@@ -113,6 +118,16 @@ export async function fetchAuditTrail({ limit = 50, beforeId = null } = {}) {
  * Simulates backend integration for quantum case management
  */
 export async function escalateQuantumSession(sessionId, actor = 'Tier 1 Analyst', notes = '') {
+  localStorage.setItem(`quantum_status_${sessionId}`, 'escalated');
+  const qAudits = JSON.parse(localStorage.getItem('quantum_audits') || '[]');
+  qAudits.unshift({
+    id: 'qaudit-' + Math.random().toString(36).substr(2, 9),
+    actor,
+    action: 'ESCALATE',
+    notes,
+    created_at: new Date().toISOString()
+  });
+  localStorage.setItem('quantum_audits', JSON.stringify(qAudits));
   return new Promise((resolve) => setTimeout(() => resolve({ status: 'escalated' }), 600));
 }
 
@@ -121,9 +136,18 @@ export async function escalateQuantumSession(sessionId, actor = 'Tier 1 Analyst'
  * Simulates backend integration for quantum case management
  */
 export async function dismissQuantumSession(sessionId, actor = 'Tier 1 Analyst', notes = '') {
+  localStorage.setItem(`quantum_status_${sessionId}`, 'dismissed');
+  const qAudits = JSON.parse(localStorage.getItem('quantum_audits') || '[]');
+  qAudits.unshift({
+    id: 'qaudit-' + Math.random().toString(36).substr(2, 9),
+    actor,
+    action: 'DISMISS',
+    notes,
+    created_at: new Date().toISOString()
+  });
+  localStorage.setItem('quantum_audits', JSON.stringify(qAudits));
   return new Promise((resolve) => setTimeout(() => resolve({ status: 'dismissed' }), 600));
 }
-
 
 /**
  * Fetch a page of quantum/TLS sessions.
@@ -136,7 +160,14 @@ export async function fetchQuantumSessions({ limit = 100, beforeId = null } = {}
 
   const res = await fetch(`${API_BASE}/quantum/sessions?${params}`);
   if (!res.ok) throw new Error('Failed to fetch quantum sessions');
-  return res.json();
+  const data = await res.json();
+  if (data && data.items) {
+    data.items = data.items.map(item => ({
+      ...item,
+      status: localStorage.getItem(`quantum_status_${item.session_id}`) || 'open'
+    }));
+  }
+  return data;
 }
 
 export async function injectScenario(scenarioType) {

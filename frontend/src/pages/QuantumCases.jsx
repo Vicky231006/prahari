@@ -30,7 +30,14 @@ export default function QuantumCases() {
     keepPreviousData: true,
   });
 
-  const cases = casesData?.items ?? [];
+  const allCases = casesData?.items ?? [];
+  // Client-side status filtering to mirror Cases.jsx exactly
+  const cases = allCases.filter(c => {
+    const currentStatus = c.status || 'open';
+    if (!statusFilter) return true;
+    return currentStatus === statusFilter;
+  });
+
   const casesNextCursor = casesData?.next_cursor ?? null;
   const casesHasMore = Boolean(casesNextCursor);
   const casesIsFirstPage = casesCursorHistory.length === 0;
@@ -50,7 +57,7 @@ export default function QuantumCases() {
   // ── Audit trail query ────────────────────────────────────────────────────
   const { data: auditData, isLoading: auditLoading } = useQuery({
     queryKey: ['audit_quantum', auditCursor],
-    queryFn: () => fetchAuditTrail({ limit: 50, beforeId: auditCursor }),
+    queryFn: () => fetchAuditTrail({ limit: 50, beforeId: auditCursor, isQuantum: true }),
     staleTime: 10000,
     keepPreviousData: true,
   });

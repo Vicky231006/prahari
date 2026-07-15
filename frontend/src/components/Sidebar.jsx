@@ -23,10 +23,6 @@ export default function Sidebar({ demoMode = false }) {
       <NavLink to="/cases" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
         <Briefcase /> Alert Cases & Audit
       </NavLink>
-      
-      <NavLink to="/quantum-cases" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-        <Briefcase /> Quantum Cases & Audit
-      </NavLink>
 
       {demoMode && (
         <>
