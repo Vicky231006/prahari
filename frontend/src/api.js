@@ -109,6 +109,23 @@ export async function fetchAuditTrail({ limit = 50, beforeId = null } = {}) {
 }
 
 /**
+ * MOCK: Escalate Quantum Session
+ * Simulates backend integration for quantum case management
+ */
+export async function escalateQuantumSession(sessionId, actor = 'Tier 1 Analyst', notes = '') {
+  return new Promise((resolve) => setTimeout(() => resolve({ status: 'escalated' }), 600));
+}
+
+/**
+ * MOCK: Dismiss Quantum Session
+ * Simulates backend integration for quantum case management
+ */
+export async function dismissQuantumSession(sessionId, actor = 'Tier 1 Analyst', notes = '') {
+  return new Promise((resolve) => setTimeout(() => resolve({ status: 'dismissed' }), 600));
+}
+
+
+/**
  * Fetch a page of quantum/TLS sessions.
  * Returns { items: QuantumAlertResponse[], next_cursor: string | null }
  */

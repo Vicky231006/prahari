@@ -43,7 +43,7 @@ export function ToastContainer() {
   );
 }
 
-function toast(type, title, msg = '') {
+export function toast(type, title, msg = '') {
   if (!_setToasts) return;
   const id = ++_toastId;
   _setToasts(prev => [...prev, { id, type, title, msg }]);
@@ -53,7 +53,7 @@ function toast(type, title, msg = '') {
 }
 
 // ── Confirm dismiss modal ────────────────────────────────────────────────────
-function ConfirmDismissModal({ identityId, onConfirm, onCancel }) {
+export function ConfirmDismissModal({ identityId, onConfirm, onCancel }) {
   const [reason, setReason] = useState('');
   const textareaRef = useRef(null);
 

@@ -1,9 +1,14 @@
 import { useState } from 'react';
 import {
   X, FileText, Activity, Server,
-  Shield, Info, PieChart, Search, AlertTriangle
+  Shield, Info, PieChart, Search, AlertTriangle,
+  Briefcase, UserPlus, FileOutput, DownloadCloud, CheckCircle,
+  ShieldX, CheckCheck, Loader2
 } from 'lucide-react';
 import SeverityBadge from './SeverityBadge';
+import { useQueryClient } from '@tanstack/react-query';
+import { ConfirmDismissModal, toast } from './ExplanationDrawer';
+import { escalateQuantumSession, dismissQuantumSession } from '../api';
 
 // Helper component for "Data not adequate"
 function DataNotAdequate() {
@@ -28,45 +33,49 @@ function ExplanationTab({ session }) {
     <div className="fade-in" style={{ padding: '24px', overflowY: 'auto' }}>
       <div className="section-header" style={{ fontSize: '1.2rem', marginBottom: '16px' }}>Anomaly Explanation</div>
       
-      <div className="card mb-24">
-        <h4 className="mb-8" style={{ fontWeight: 600 }}>Why this asset was flagged</h4>
-        <ul style={{ paddingLeft: '20px', marginBottom: '16px', color: 'var(--text-secondary)' }}>
+      <div className="card mb-24" style={{ padding: '24px' }}>
+        <h4 className="mb-8" style={{ fontWeight: 600, fontSize: '0.95rem', color: 'var(--text-primary)' }}>Why this asset was flagged</h4>
+        <ul style={{ paddingLeft: '20px', marginBottom: '20px', color: 'var(--text-secondary)', fontSize: '0.85rem', lineHeight: '1.5' }}>
           {session.risk_factors?.length > 0 ? (
-            session.risk_factors.map(rf => <li key={rf}>{rf.replace(/_/g, ' ')}</li>)
+            session.risk_factors.map(rf => <li key={rf} style={{ marginBottom: '4px' }}>{rf.replace(/_/g, ' ')}</li>)
           ) : (
             <li>No specific risk factors flagged.</li>
           )}
         </ul>
 
-        <h4 className="mb-8" style={{ fontWeight: 600 }}>Current Algorithms</h4>
-        <div className="flex gap-12 mb-16">
-          <div className="chip">Key Exchange: {session.key_exchange}</div>
-          <div className="chip">Signature: {session.signature_algo}</div>
+        <h4 className="mb-8" style={{ fontWeight: 600, fontSize: '0.95rem', color: 'var(--text-primary)' }}>Current Algorithms</h4>
+        <div className="flex gap-12 mb-20">
+          <div style={{ background: 'var(--surface-hover)', border: '1px solid var(--surface-border)', borderRadius: '6px', padding: '6px 12px', fontSize: '0.8rem', fontFamily: 'monospace', color: 'var(--text-secondary)' }}>
+            Key Exchange: <strong style={{ color: 'var(--text-primary)' }}>{session.key_exchange}</strong>
+          </div>
+          <div style={{ background: 'var(--surface-hover)', border: '1px solid var(--surface-border)', borderRadius: '6px', padding: '6px 12px', fontSize: '0.8rem', fontFamily: 'monospace', color: 'var(--text-secondary)' }}>
+            Signature: <strong style={{ color: 'var(--text-primary)' }}>{session.signature_algo}</strong>
+          </div>
         </div>
 
         {isLegacy && (
-          <>
-            <h4 className="mb-8" style={{ fontWeight: 600 }}>Why they are vulnerable</h4>
-            <p className="text-sm text-secondary mb-16" style={{ fontSize: '0.85rem' }}>
+          <div style={{ borderTop: '1px solid var(--surface-border)', paddingTop: '16px', marginBottom: '16px' }}>
+            <h4 className="mb-8" style={{ fontWeight: 600, fontSize: '0.95rem', color: 'var(--text-primary)' }}>Why they are vulnerable</h4>
+            <p className="text-secondary" style={{ fontSize: '0.85rem', lineHeight: '1.5', margin: 0 }}>
               Algorithms like {session.key_exchange} and {session.signature_algo} rely on the difficulty of integer factorization or the discrete logarithm problem. A CRQC running Shor's algorithm can solve these problems in polynomial time, completely breaking the encryption.
             </p>
-          </>
+          </div>
         )}
 
         {isHNDL && (
-          <>
-            <h4 className="mb-8 flex items-center gap-6 text-severity-critical" style={{ fontWeight: 600 }}>
-              <AlertTriangle size={16} /> Harvest Now, Decrypt Later (HNDL)
+          <div style={{ borderTop: '1px solid var(--surface-border)', paddingTop: '16px' }}>
+            <h4 className="mb-8 flex items-center gap-6 text-severity-critical" style={{ fontWeight: 600, fontSize: '0.95rem' }}>
+              <AlertTriangle size={15} /> Harvest Now, Decrypt Later (HNDL)
             </h4>
-            <p className="text-sm text-secondary mb-16" style={{ fontSize: '0.85rem' }}>
-              Adversaries are currently intercepting and storing this encrypted traffic. Because the data has a long shelf-life (Data Sensitivity: {session.data_sensitivity}), it will still be valuable when quantum computers become capable of decrypting it retrospectively.
+            <p className="text-secondary" style={{ fontSize: '0.85rem', lineHeight: '1.5', margin: 0 }}>
+              Adversaries are currently intercepting and storing this encrypted traffic. Because the data has a long shelf-life (Data Sensitivity: <strong>{session.data_sensitivity}</strong>), it will still be valuable when quantum computers become capable of decrypting it retrospectively.
             </p>
-          </>
+          </div>
         )}
       </div>
 
       <div className="section-header" style={{ fontSize: '1.1rem', marginBottom: '12px' }}>AI Summary (Rule-Based Fallback)</div>
-      <div className="explanation-text" style={{ padding: '16px', background: 'var(--surface-hover)', borderRadius: 'var(--radius-sm)' }}>
+      <div className="explanation-text" style={{ padding: '16px', background: 'var(--surface-hover)', borderRadius: '8px', fontSize: '0.85rem', lineHeight: '1.5', color: 'var(--text-secondary)', border: '1px solid var(--surface-border)' }}>
         {rulesBasedSummary}
       </div>
     </div>
@@ -269,8 +278,60 @@ function ComplianceTab({ session }) {
 
 export default function QuantumWorkspaceDrawer({ session, onClose }) {
   const [activeTab, setActiveTab] = useState('explanation');
+  const [isCaseCreated, setIsCaseCreated] = useState(false);
+  const [showToast, setShowToast] = useState(false);
+  
+  // Investigation actions state
+  const [escalating, setEscalating] = useState(false);
+  const [dismissing, setDismissing] = useState(false);
+  const [showConfirmDismiss, setShowConfirmDismiss] = useState(false);
+  const [localStatus, setLocalStatus] = useState(session?.status || 'open');
+
+  const queryClient = useQueryClient();
 
   if (!session) return null;
+
+  const handleCreateCase = () => {
+    setIsCaseCreated(true);
+    setShowToast(true);
+    setTimeout(() => setShowToast(false), 3000);
+  };
+
+  const handleEscalate = async () => {
+    setEscalating(true);
+    try {
+      await escalateQuantumSession(session.session_id, 'Tier 1 Analyst');
+      setLocalStatus('escalated');
+      toast('success', 'Escalated to Tier 2', `Quantum session ${session.session_id.substring(0,8)} has been escalated.`);
+      queryClient.invalidateQueries({ queryKey: ['quantum_sessions'] });
+      queryClient.invalidateQueries({ queryKey: ['cases'] });
+      queryClient.invalidateQueries({ queryKey: ['audit_quantum'] });
+    } catch (err) {
+      toast('error', 'Escalation failed', err.message);
+    } finally {
+      setEscalating(false);
+    }
+  };
+
+  const handleDismissConfirm = async (reason) => {
+    setShowConfirmDismiss(false);
+    setDismissing(true);
+    const prevStatus = localStatus;
+    setLocalStatus('dismissed');
+    try {
+      await dismissQuantumSession(session.session_id, 'Tier 1 Analyst', reason || 'Dismissed as False Positive');
+      toast('success', 'Session Dismissed', `Session marked as false positive.`);
+      queryClient.invalidateQueries({ queryKey: ['quantum_sessions'] });
+      queryClient.invalidateQueries({ queryKey: ['cases'] });
+      queryClient.invalidateQueries({ queryKey: ['audit_quantum'] });
+      onClose();
+    } catch (err) {
+      setLocalStatus(prevStatus);
+      toast('error', 'Dismiss failed', err.message);
+    } finally {
+      setDismissing(false);
+    }
+  };
 
   const tabs = [
     { id: 'explanation', label: 'Explanation', icon: <FileText size={13} /> },
@@ -287,10 +348,19 @@ export default function QuantumWorkspaceDrawer({ session, onClose }) {
   const lastObserved = session.created_at
     ? new Date(session.created_at).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' })
     : <DataNotAdequate />;
-  const status = session.status || 'open';
+  const status = localStatus;
+  const isTerminal = status === 'escalated' || status === 'dismissed';
+  const isBusy = escalating || dismissing;
 
   return (
     <>
+      {showConfirmDismiss && (
+        <ConfirmDismissModal
+          identityId={session.session_id}
+          onConfirm={handleDismissConfirm}
+          onCancel={() => setShowConfirmDismiss(false)}
+        />
+      )}
       <div className="drawer-overlay" onClick={onClose} />
       <div className="drawer drawer--workspace">
         
@@ -299,7 +369,7 @@ export default function QuantumWorkspaceDrawer({ session, onClose }) {
           <div>
             <div className="flex items-center gap-12 mb-8">
               <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 'var(--font-weight-display)' }}>
-                {assetName}
+                Quantum Investigation Workspace
               </h2>
               <SeverityBadge severity={riskLevel} />
               <span className={`status-pill status-pill--${status}`}>
@@ -308,6 +378,8 @@ export default function QuantumWorkspaceDrawer({ session, onClose }) {
             </div>
             
             <div className="flex items-center gap-12 text-xs text-muted">
+              <span className="font-mono">ID: {session.session_id}</span>
+              <span>·</span>
               <span className="font-mono">Readiness: {readinessScore}</span>
               <span>·</span>
               <span>Env: {environment}</span>
@@ -339,6 +411,41 @@ export default function QuantumWorkspaceDrawer({ session, onClose }) {
           {activeTab === 'recommendations' && <RecommendationsTab session={session} />}
           {activeTab === 'impact' && <ImpactAnalysisTab session={session} />}
           {activeTab === 'compliance' && <ComplianceTab session={session} />}
+        </div>
+        
+        {/* ── Footer action buttons ── */}
+        <div className="drawer__footer">
+          {isTerminal ? (
+            <div className="flex items-center justify-center gap-8 text-sm text-muted" style={{ flex: 1, padding: '4px 0' }}>
+              <CheckCheck size={15} />
+              {localStatus === 'escalated'
+                ? 'Escalated to Tier 2 — case created and audit logged.'
+                : 'Dismissed as false positive — audit logged.'}
+            </div>
+          ) : (
+            <>
+              <button
+                className="btn btn--secondary"
+                style={{ flex: 1 }}
+                onClick={() => setShowConfirmDismiss(true)}
+                disabled={isBusy}
+                title="Dismiss as False Positive (requires confirmation)"
+              >
+                {dismissing ? <Loader2 size={15} className="spin" /> : <ShieldX size={15} />}
+                Dismiss False Positive
+              </button>
+              <button
+                className="btn btn--primary"
+                style={{ flex: 1 }}
+                onClick={handleEscalate}
+                disabled={isBusy}
+                title="Escalate to Tier 2 — creates a case"
+              >
+                {escalating ? <Loader2 size={15} className="spin" /> : <CheckCircle size={15} />}
+                Escalate to Tier 2
+              </button>
+            </>
+          )}
         </div>
       </div>
     </>
