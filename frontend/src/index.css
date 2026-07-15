@@ -985,3 +985,28 @@ body::after { background: var(--orb-2); }
   overflow: hidden;
   opacity: 0.85;
 }
+
+/* ── COLLAPSE BUTTON ── */
+.graph-collapse-btn {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 1px solid var(--accent-light);
+  color: var(--text-inverse);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 15;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+  transition: all 150ms ease;
+  padding: 0;
+  pointer-events: auto;
+}
+.graph-collapse-btn:hover {
+  transform: scale(1.15);
+  background: var(--severity-critical);
+  border-color: var(--severity-critical);
+}

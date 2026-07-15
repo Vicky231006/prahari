@@ -294,6 +294,8 @@ export default function InvestigationGraph({ identityId, titleComponent }) {
   const layoutNameRef = useRef('cose');
   const loadedIds     = useRef(new Set());   // which node IDs we've expanded
   const isExpandingRef = useRef(false);      // prevent concurrent expansions
+  const expansionTree = useRef(new Map());   // parentId -> { nodes: Set, edges: Set }
+  const collapseLayerRef = useRef(null);
 
   // Plain serialisable data only — no live Cytoscape objects in React state
   const [inspectedData, setInspectedData] = useState(null);
@@ -310,6 +312,78 @@ export default function InvestigationGraph({ identityId, titleComponent }) {
     staleTime: 120_000,
     retry: 1,
   });
+
+  const syncCollapseButtons = useCallback(() => {
+    const cy = cyRef.current;
+    const layer = collapseLayerRef.current;
+    if (!cy || !layer) return;
+
+    layer.innerHTML = '';
+    const expandedNodes = cy.nodes('[collapsed = "false"]');
+
+    expandedNodes.forEach(node => {
+      const tracked = expansionTree.current.get(node.id());
+      if (!tracked || (tracked.nodes.size === 0 && tracked.edges.size === 0)) return;
+
+      const pos = node.renderedPosition();
+      const w = node.renderedWidth();
+      const h = node.renderedHeight();
+
+      const btn = document.createElement('button');
+      btn.className = 'graph-collapse-btn';
+      btn.title = 'Collapse';
+      btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line></svg>`;
+      
+      btn.style.left = `${pos.x + w / 2 - 6}px`;
+      btn.style.top = `${pos.y - h / 2 - 6}px`;
+
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        collapseNode(node.id());
+      };
+
+      layer.appendChild(btn);
+    });
+  }, []);
+
+  const collapseNode = useCallback((nodeId) => {
+    const cy = cyRef.current;
+    if (!cy) return;
+
+    const nodesToRemove = new Set();
+    const edgesToRemove = new Set();
+
+    function traverse(id) {
+      if (!expansionTree.current.has(id)) return;
+      const { nodes, edges } = expansionTree.current.get(id);
+      nodes.forEach(nId => {
+        nodesToRemove.add(nId);
+        traverse(nId);
+      });
+      edges.forEach(eId => {
+        edgesToRemove.add(eId);
+      });
+      expansionTree.current.delete(id);
+      loadedIds.current.delete(id);
+    }
+
+    traverse(nodeId);
+
+    if (nodesToRemove.size === 0 && edgesToRemove.size === 0) return;
+
+    cy.batch(() => {
+      nodesToRemove.forEach(nId => cy.getElementById(nId).remove());
+      edgesToRemove.forEach(eId => cy.getElementById(eId).remove());
+      
+      const parent = cy.getElementById(nodeId);
+      if (parent.length > 0) {
+        parent.data('collapsed', 'true');
+      }
+    });
+
+    updateStats(cy);
+    syncCollapseButtons();
+  }, [syncCollapseButtons]);
 
   // ── Bootstrap Cytoscape once (no deps on state) ──────────────────────────
   useEffect(() => {
@@ -344,8 +418,16 @@ export default function InvestigationGraph({ identityId, titleComponent }) {
       // Mark seed nodes as loaded
       loadedIds.current.add(identityId);
 
+      // Track root node's children in expansion tree so it can be collapsed
+      const seedNodeIds = new Set(seedData.nodes.map(n => n.id).filter(id => id !== identityId));
+      const seedEdgeIds = new Set(seedData.edges.map(e => e.id));
+      expansionTree.current.set(identityId, { nodes: seedNodeIds, edges: seedEdgeIds });
+
       // Run initial layout
       runLayout(cy, name, true);
+
+      // Bind collapse sync to graph movements
+      cy.on('pan zoom position data', syncCollapseButtons);
 
 
 
@@ -405,6 +487,12 @@ export default function InvestigationGraph({ identityId, titleComponent }) {
             return;
           }
 
+          // Track in expansion tree
+          expansionTree.current.set(nid, {
+            nodes: new Set(newNodes.map(nd => nd.data.id)),
+            edges: new Set(newEdges.map(ed => ed.data.id))
+          });
+
           cy.add([...newNodes, ...newEdges]);
 
           // Layout only the new subgraph + their direct neighbourhood
@@ -429,6 +517,7 @@ export default function InvestigationGraph({ identityId, titleComponent }) {
             updateStats(cy);
             setExpandingId(null);
             isExpandingRef.current = false;
+            syncCollapseButtons();
           });
         }).catch(() => {
           setExpandingId(null);
@@ -566,8 +655,9 @@ export default function InvestigationGraph({ identityId, titleComponent }) {
       </div>
 
       {/* ── Canvas ──────────────────────────────────────────────────────── */}
-      <div className="graph-container-outer">
+      <div className="graph-container-outer" style={{ position: 'relative' }}>
         <div ref={containerRef} className="graph-canvas" />
+        <div ref={collapseLayerRef} className="collapse-buttons-layer" style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden' }} />
 
         {/* Node Inspector (floats over canvas) */}
         {inspectedData && (
