@@ -48,56 +48,6 @@ flowchart LR
   RAG --> CH[ChromaDB]
   GW -->|ws/rest| UI[React Frontend]
 ```
-### ALTERNATIVE:
-```mermaid
-  graph TD
-    %% Telemetry Sources & Generators
-    subgraph SG [Data Generation & Scenario Injection]
-        A[Normal Traffic Generators] -->|Kafka| K[Kafka Broker]
-        SR[Interactive Scenario Runner] -->|API / Kafka| K
-    end
-
-    %% Kafka Ingestion & Streaming
-    subgraph ST [Streaming Detection Pipeline]
-        K -->|security-telemetry| FJ[Identity Fusion Job]
-        K -->|transaction-events| FJ
-        K -->|tls-handshake| QJ[Crypto Inventory Job]
-        
-        FJ <-->|State/Window Buffer| R[Redis Feature Store]
-        QJ -->|KPI Increments| R
-    end
-
-    %% Backend Services
-    subgraph SV [Gateway & Backend Microservices]
-        FJ -->|fused-alerts| K
-        QJ -->|quantum-alerts| K
-        
-        K -->|Consumer Daemon| GW[FastAPI Gateway]
-        GW -->|Persist Alerts & Cases| DB[(PostgreSQL DB)]
-        GW <-->|Check/Write Cache| R
-        
-        GW -->|Retrieve Context| RAG[RAG Explanation Service]
-        RAG <-->|Vector Search| CH[(ChromaDB Vector Store)]
-        RAG -->|Stream Explanations| GW
-    end
-
-    %% Analyst Frontend
-    subgraph UI [React Frontend Web App]
-        GW -->|WebSockets / REST| V[React + Vite UI]
-        V -->|Dual-Theme Engine| Aero[Aero Glassmorphism]
-        V -->|Dual-Theme Engine| Brut[Brutalist High-Contrast]
-        V -->|Triage Actions| GW
-    end
-
-    classDef db fill:#2c3e50,stroke:#34495e,stroke-width:2px,color:#fff;
-    classDef mq fill:#d35400,stroke:#e67e22,stroke-width:2px,color:#fff;
-    classDef worker fill:#27ae60,stroke:#2ecc71,stroke-width:2px,color:#fff;
-    classDef gateway fill:#2980b9,stroke:#3498db,stroke-width:2px,color:#fff;
-    class DB,CH db;
-    class K mq;
-    class FJ,QJ worker;
-    class GW,RAG gateway;
-```
 
 ---
 
