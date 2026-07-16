@@ -1,16 +1,55 @@
-# 🛡️ PRAHARI: Security Sentinel
-> **AI-Driven Correlation of Cybersecurity Telemetry & Transactional Behaviour**
+# 🛡️ PRAHARI — Security Sentinel
 
-PRAHARI (Hindi for *sentinel* or *watchman*) is a real-time detection and response pipeline designed to fuse identity-linked cybersecurity events (logins, endpoint alerts, network signals) with transactional banking behavior. By correlating these distinct telemetry streams inside a sliding 15-minute window, PRAHARI dramatically reduces false positives, bridging the gap between Security Operations Centers (SOC) and Fraud Investigation teams.
+AI-driven pipeline that correlates identity-linked cybersecurity telemetry with transactional behaviour to produce higher-confidence fused alerts, plus a deterministic crypto-inventory module for PQC/HNDL detection.
 
-Additionally, PRAHARI incorporates a post-quantum cryptographic (PQC) monitoring inventory to track migration readiness and alert on Harvest-Now-Decrypt-Later (HNDL) exposure risks. All anomaly explanations are generated using a semantic RAG layer referencing the baseline controls of the **Reserve Bank of India (RBI) Cyber Security Framework**.
+This README is generated from the repository contents. All statements below are verified against the code in this repository; see the referenced files for implementation details.
 
----
+## Project summary
+- Primary backend: FastAPI gateway (`services/gateway/main.py`).
+- Streaming jobs: `streaming/run_all.py` with fusion and quantum jobs under `streaming/fusion` and `streaming/quantum`.
+- Synthetic generators: `data/synthetic/generators` (used by demo & seeding).
+- RAG explanation service: `services/rag_explanation` (ChromaDB + Gemini fallback).
+- Fusion classifier: `services/fusion_classifier` (joblib model optional; rule fallback present).
+- Frontend: React + Vite under `frontend`.
 
-## 🏗️ Architecture
+## Key implemented features (verified)
+- Identity-linked fusion with a 15-minute sliding window and a 12-feature vector (see `streaming/fusion/features.py`).
+- Fusion classifier endpoint `POST /internal/fusion/score` with a joblib-backed model and a deterministic fallback (`services/fusion_classifier/main.py`).
+- RAG explanation service with retrieval (ChromaDB), generation (Gemini optional), and a 24h Redis cache (`services/rag_explanation/main.py`).
+- Deterministic PQC/HNDL detection and quantum session alerts (`streaming/quantum/job.py`).
+- FastAPI Gateway exposing alert/case/audit/quantum APIs, WebSocket broadcasting, KPI caching, and a demo scenario injector (`services/gateway/main.py`).
+- Redis-based sliding-window feature store (`streaming/redis_client.py`).
 
+## Tech stack
+- Python 3.12+, FastAPI, SQLAlchemy (async), asyncpg
+- Kafka (client: confluent-kafka), Redis, PostgreSQL
+- ChromaDB (vector DB) and optional Google Gemini for RAG
+- React + Vite frontend
+- Docker & Docker Compose
+
+## Architecture diagram
 ```mermaid
-graph TD
+flowchart LR
+  subgraph GEN[Generators]
+    G[security / txn / tls generators]
+  end
+  G -->|Kafka topics| K(Kafka)
+  subgraph STREAM[Streaming]
+    K --> FJ[Identity Fusion Job]
+    K --> QJ[Crypto Inventory Job]
+    FJ -->|Redis windows| R[Redis]
+    QJ -->|Redis counts| R
+  end
+  FJ -->|fusion-alerts| K
+  QJ -->|quantum-alerts| K
+  K -->|consumer| GW[FastAPI Gateway]
+  GW -->|persist| DB[(Postgres)]
+  GW -->|RAG RPC| RAG[RAG Service]
+  RAG --> CH[ChromaDB]
+  GW -->|ws/rest| UI[React Frontend]
+
+  ALTERNATIVE:
+  graph TD
     %% Telemetry Sources & Generators
     subgraph SG [Data Generation & Scenario Injection]
         A[Normal Traffic Generators] -->|Kafka| K[Kafka Broker]
@@ -61,7 +100,7 @@ graph TD
 
 ---
 
-## ✨ Key Features
+## ✨ Key Features in detail
 
 ### 1. Multi-Channel Correlation (Identity-Linked Joint Window)
 Traditional systems separate network SIEM alerts from transactional fraud alerts. PRAHARI links both using the customer/employee `identity_id`.
@@ -136,112 +175,111 @@ prahari/
 
 ---
 
-## ⚡ Prerequisites
-*   **Docker & Docker Compose**: To orchestrate local services.
-*   **Python 3.12+**: Required for local backend running.
-*   **Node.js 20+**: Required for local frontend development.
-*   **Gemini API Key**: Required for RAG explanation generation.
+```
 
----
+## Repository highlights
+- `services/gateway/` — API server, models, schemas, WS manager.
+- `services/fusion_classifier/` — classifier microservice (model file optional).
+- `services/rag_explanation/` — retrieval + generator + SSE streaming.
+- `streaming/` — streaming runner, fusion & quantum jobs, Redis client.
+- `data/synthetic/generators/` — synthetic generators + scenario injector.
+- `scripts/init_db.sql` — Postgres schema and indexes applied on DB init.
 
-## 🚀 Getting Started (Docker Compose)
+## Environment variables (from `.env.example`)
+Copy `.env.example` → `.env` and edit values before running.
 
-The easiest way to run the entire PRAHARI stack is using Docker Compose.
+Variables present in the template:
+- `KAFKA_BOOTSTRAP_SERVERS`, `REDIS_HOST`, `REDIS_PORT`
+- `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`
+- `CHROMA_HOST`, `CHROMA_PORT`
+- `GEMINI_API_KEY` (optional; RAG falls back when missing)
+- `GATEWAY_HOST`, `GATEWAY_PORT`, `FUSION_CLASSIFIER_URL`, `RAG_SERVICE_URL`
+- `JWT_SECRET` (present but not enforced by the gateway code)
+- `DEMO_MODE` (gates scenario injection)
 
-1.  **Configure environment variables**:
-    ```bash
-    cp .env.example .env
-    ```
-    Edit the `.env` file and insert your `GEMINI_API_KEY`.
+See `.env.example` for exact keys and defaults.
 
-2.  **Start Infrastructure Services** (Postgres, Kafka, Redis, ChromaDB):
-    ```bash
-    docker compose up -d
-    ```
-    This spins up the database, brokers, caching layers, and initializes the Kafka topics.
+## API overview (auto-discovered)
+Primary API: FastAPI gateway (`/api`) implemented in `services/gateway/main.py`. Notable endpoints (all verified):
 
-3.  **Start Application Services** (Frontend, Gateway, Streaming Consumers, Generators):
-    ```bash
-    docker compose --profile full up -d
-    ```
+- `GET /api/alerts` — paginated fused alerts (cursor `before_id`, filters `severity`, `identity_id`).
+- `GET /api/alerts/{alert_id}` — single alert detail.
+- `POST /api/alerts/{alert_id}/escalate` — escalate alert; creates/updates Case and writes an audit entry.
+- `POST /api/alerts/{alert_id}/dismiss` — dismiss alert; writes audit entry.
+- `GET /api/alerts/{alert_id}/timeline` — assembled investigation timeline.
+- `GET /api/cases` — paginated cases.
+- `POST /api/cases/{case_id}/action` — perform case actions (ack/esc/dismiss).
+- `GET /api/audit` — paginated audit trail.
+- `GET /api/quantum/sessions` — paginated quantum/TLS sessions.
+- `GET /api/dashboard/kpis` — dashboard KPIs (Redis cache, 30s TTL).
+- `POST /api/demo/inject` — inject demo scenario into Kafka (requires `DEMO_MODE=true`).
+- `GET /api/identities/{identity_id}` — identity profile from Postgres.
+- `GET /api/graph/{identity_id}` and `GET /api/graph/expand/{node_id}` — investigation graph endpoints.
 
-4.  **Access the Dashboard**:
-    Open your browser and navigate to `http://localhost:5173`.
+Other services:
+- Fusion classifier: `POST /internal/fusion/score` (`services/fusion_classifier/main.py`).
+- RAG service: `POST /api/explain` and `POST /api/explain/stream` (`services/rag_explanation/main.py`).
 
----
+Schemas are defined in `services/gateway/schemas.py` and data models in `services/gateway/models.py`.
 
-## 🛠️ Running Locally (Developer Mode)
+## Database & schema
+- SQL schema and indexes: `scripts/init_db.sql` (tables: `alerts`, `quantum_alerts`, `cases`, `audit_trail`, `identity_profiles`).
+- ORM models in `services/gateway/models.py` mirror the schema.
 
-To run the components individually for development/debugging:
+## ML components
+- Feature extraction: `streaming/fusion/features.py` (exact 12 features listed in code).
+- Classifier microservice: `services/fusion_classifier/main.py`. Looks for `fusion_model.joblib` (default path) and falls back to deterministic scoring when the model is absent or prediction fails.
+- ChromaDB is seeded with RBI controls by `services/rag_explanation/corpus.py`.
 
-### 1. Start Infrastructure
-Run the core infrastructure services in Docker:
+## Security notes (current state in repo)
+- `DEMO_MODE` safely gates the demo scenario injection endpoint and UI.
+- `GEMINI_API_KEY` is optional; absence degrades RAG to a deterministic generator.
+- `JWT_SECRET` exists in `.env` template but the gateway does not currently enforce authentication — this is documented in `docs/meta/LIMITATIONS.md`.
+
+## Performance and reliability features implemented
+- Bounded Kafka enqueue queue + fixed asyncio worker pool in the gateway to control concurrency and DB load.
+- Cursor (keyset) pagination on list endpoints to avoid OFFSET scans.
+- Redis caching for KPIs, quantum stats, and RAG explanations with TTLs and rate-limited invalidation.
+- Database composite indexes and covering indexes created in `scripts/init_db.sql` to support efficient GROUP BY and keyset queries.
+
+## Run with Docker Compose (recommended)
+1. Copy `.env.example` to `.env` and edit values.
+```bash
+cp .env.example .env
+```
+2. Start infrastructure services (Kafka, Redis, Postgres, ChromaDB):
 ```bash
 docker compose up -d
 ```
-
-### 2. Setup Python Virtual Environment
+3. Start full stack (services with `profiles: ["full"]`):
 ```bash
-python -m venv venv
-venv\Scripts\activate       # On Windows
-source venv/bin/activate     # On Unix/macOS
-pip install -r requirements.txt
+docker compose --profile full up -d --build
 ```
+4. Frontend: http://localhost:5173 (gateway on 8080 by default).
 
-### 3. Run Microservices (Separate terminals)
-- **Gateway**:
-  ```bash
-  python -m services.gateway.main
-  ```
-- **Fusion Classifier**:
-  ```bash
-  python -m services.fusion_classifier.main
-  ```
-- **RAG Explanations**:
-  ```bash
-  python -m services.rag_explanation.main
-  ```
-- **Streaming Analytics Job**:
-  ```bash
-  python -m streaming.run_all
-  ```
-- **Synthetic Data Stream**:
-  ```bash
-  python -m data.synthetic.generators.run_generators
-  ```
+## Running locally (developer)
+- Create venv and install: `pip install -r requirements.txt`.
+- Start components individually (see `services/*` and `streaming/run_all.py`).
 
-### 4. Run Frontend App
-```bash
-cd frontend
-npm install
-npm run dev
-```
+## Tests
+- Backend: `pytest tests/` (uses fixtures in `tests/conftest.py`).
+- Frontend: `cd frontend && npm run test`.
+- E2E: `cd frontend && npx playwright test`.
+
+## Known limitations (from repo)
+- Gateway does not enforce JWT auth; endpoints are currently open for demo/test convenience (`docs/meta/LIMITATIONS.md`).
+- Docker Compose stack is single-node demo oriented (not HA-ready).
+
+## Future work (not implemented here)
+- Enforce auth (JWT/OAuth) on gateway and WS.
+- Replace rule-based fallback with a versioned model registry and add CI for model compatibility checks.
+- Production-grade orchestration and HA for Kafka/Redis/Postgres, and distributed streaming (Flink).
+
+## Contributing
+- Open issues or PRs. Run tests and follow existing code patterns.
+
+## License
+- No license file present in the repository. Add a `LICENSE` if you intend to open-source this project.
 
 ---
-
-## 🧪 Testing Suite
-
-PRAHARI has rigorous tests covering backend logic, UI components, and End-to-End (E2E) flows.
-
-### Backend Tests
-Execute pytest on the local environment:
-```bash
-pytest tests/
-```
-*Verifies: Crypto classification, anomaly detection rules, 12-feature sliding-window extraction, and API contracts.*
-
-### Frontend Unit & Component Tests
-Run Vitest in the frontend folder:
-```bash
-cd frontend
-npm run test
-```
-*Verifies: Theme providers, localStorage settings, and layout DOM integrity.*
-
-### End-to-End (E2E) Playwright Tests
-Run E2E UI automation:
-```bash
-cd frontend
-npx playwright test
-```
-*Verifies: Automated navigation, Scenario Runner triggering, WebSocket alert reception, drawer opening, and Case Action state updates.*
+References: files and code paths mentioned above (search in repository for each path).
