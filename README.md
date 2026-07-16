@@ -47,8 +47,9 @@ flowchart LR
   GW -->|RAG RPC| RAG[RAG Service]
   RAG --> CH[ChromaDB]
   GW -->|ws/rest| UI[React Frontend]
-
-  ALTERNATIVE:
+```
+### ALTERNATIVE:
+```mermaid
   graph TD
     %% Telemetry Sources & Generators
     subgraph SG [Data Generation & Scenario Injection]
