@@ -126,8 +126,6 @@ dhaal/
 
 ---
 
-```
-
 ## Repository highlights
 - `services/gateway/` — API server, models, schemas, WS manager.
 - `services/fusion_classifier/` — classifier microservice (model file optional).
@@ -226,11 +224,3 @@ docker compose --profile full up -d --build
 - Replace rule-based fallback with a versioned model registry and add CI for model compatibility checks.
 - Production-grade orchestration and HA for Kafka/Redis/Postgres, and distributed streaming (Flink).
 
-## Contributing
-- Open issues or PRs. Run tests and follow existing code patterns.
-
-## License
-- No license file present in the repository. Add a `LICENSE` if you intend to open-source this project.
-
----
-References: files and code paths mentioned above (search in repository for each path).
