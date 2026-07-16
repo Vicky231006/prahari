@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { fetchAlerts } from '../api';
-import { ShieldAlert, Filter, Search, ChevronDown, RefreshCw } from 'lucide-react';
+import { ShieldAlert, Filter, Search, ChevronDown, RefreshCw, Pause, Play } from 'lucide-react';
 import SeverityBadge from '../components/SeverityBadge';
 import ExplanationDrawer from '../components/ExplanationDrawer';
 import { useSearchParams } from 'react-router-dom';
@@ -12,6 +12,7 @@ export default function Alerts() {
   const severityFilter = searchParams.get('severity') || '';
 
   const [selectedAlert, setSelectedAlert] = useState(null);
+  const [isLive, setIsLive] = useState(true);
 
   // Cursor stack: array of next_cursor values for visited pages.
   // cursor = null means first page; cursor = string means a subsequent page.
@@ -30,7 +31,7 @@ export default function Alerts() {
   const queryClient = useQueryClient();
 
   const { data, isLoading, isFetching, refetch } = useQuery({
-    queryKey: ['alerts', { severity: severityFilter, identity_id: identityIdFilter, cursor }],
+    queryKey: [isLive ? 'alerts' : 'paused_alerts', { severity: severityFilter, identity_id: identityIdFilter, cursor }],
     queryFn: () => fetchAlerts(
       { severity: severityFilter, identity_id: identityIdFilter },
       { limit: 50, beforeId: cursor }
@@ -90,6 +91,15 @@ export default function Alerts() {
             <option value="medium">Medium</option>
             <option value="low">Low</option>
           </select>
+
+          <button
+            onClick={() => setIsLive(!isLive)}
+            className={`btn btn--small flex items-center gap-6 ${isLive ? 'btn--secondary' : 'btn--primary'}`}
+            title="Toggle Live Updates"
+          >
+            {isLive ? <Pause size={13} /> : <Play size={13} />}
+            {isLive ? 'Pause Feed' : 'Resume Feed'}
+          </button>
 
           <button
             onClick={refetch}

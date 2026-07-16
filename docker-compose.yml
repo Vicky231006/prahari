@@ -198,6 +198,7 @@ services:
       - "5173:5173"
     environment:
       - VITE_API_PROXY_TARGET=http://gateway:8080
+      - VITE_RAG_PROXY_TARGET=http://rag-explanation:8082
     depends_on:
       - gateway
     restart: unless-stopped

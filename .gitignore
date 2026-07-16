@@ -49,3 +49,4 @@ coverage/
 chroma_data/
 
 # Model artifacts are tracked explicitly — do NOT glob-ignore .joblib
+context.MD

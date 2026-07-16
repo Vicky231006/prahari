@@ -387,7 +387,7 @@ function ExplanationPanel({ alert }) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            signals: alert.contributing_signals,
+            contributing_signals: alert.contributing_signals,
             severity: alert.severity,
           }),
         });

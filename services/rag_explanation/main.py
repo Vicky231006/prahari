@@ -1,6 +1,7 @@
 import hashlib
 import json
 import os
+import asyncio
 from typing import List, Dict, Any, Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
@@ -71,7 +72,7 @@ except Exception as e:
 # Initialize Gemini API
 if GEMINI_API_KEY and GEMINI_API_KEY != "your-gemini-api-key-here" and GEMINI_API_KEY != "test-key-not-real":
     genai.configure(api_key=GEMINI_API_KEY)
-    gemini_model = genai.GenerativeModel("gemini-1.5-flash")
+    gemini_model = genai.GenerativeModel("gemini-2.5-flash")
     print("[init] Google Gemini AI initialized successfully")
 else:
     gemini_model = None
@@ -142,9 +143,9 @@ def generate_local_explanation(signals: List[str], severity: str, controls: List
     signals_str = ", ".join(signals).replace("_", " ")
     
     explanation = (
-        f"A joint anomaly analysis detected {signals_str} with {severity} severity. "
-        f"This event sequence violates regulatory requirements for cross-channel activity correlation "
-        f"and security monitoring. Cites compliance standards under {citations_str}."
+        f"The fusion engine detected anomalous behavior involving {signals_str}. "
+        f"This activity resulted in a {severity} severity alert due to potential policy violations. "
+        f"Relevant compliance context: {citations_str}."
     )
     return explanation
 
@@ -250,7 +251,8 @@ async def explain_alert_stream(req: ExplainRequest):
                 "summary": "Correlate distinct infrastructure alerts, behavioral anomalies, and transaction parameters."
             }]
             
-        yield f"event: controls\ndata: {json.dumps(controls)}\n\n"
+        controls_payload = {"type": "controls", "controls": [c["id"] for c in controls]}
+        yield f"event: controls\ndata: {json.dumps(controls_payload)}\n\n"
         
         # Check cache
         cache_key = get_cache_key(req.contributing_signals, req.severity)
@@ -261,7 +263,8 @@ async def explain_alert_stream(req: ExplainRequest):
                     data = json.loads(cached)
                     explanation = data["explanation"]
                     for word in explanation.split(" "):
-                        yield f"event: text\ndata: {word} \n\n"
+                        text_payload = {"type": "text", "content": word + " "}
+                        yield f"event: text\ndata: {json.dumps(text_payload)}\n\n"
                         await asyncio.sleep(0.05)
                     yield "event: end\ndata: [DONE]\n\n"
                     return
@@ -288,7 +291,8 @@ async def explain_alert_stream(req: ExplainRequest):
                 
                 # Stream explanation
                 for word in explanation.split(" "):
-                    yield f"event: text\ndata: {word} \n\n"
+                    text_payload = {"type": "text", "content": word + " "}
+                    yield f"event: text\ndata: {json.dumps(text_payload)}\n\n"
                     await asyncio.sleep(0.05)
                     
             except Exception as e:
@@ -297,7 +301,8 @@ async def explain_alert_stream(req: ExplainRequest):
         if not explanation:
             explanation = generate_local_explanation(req.contributing_signals, req.severity, controls)
             for word in explanation.split(" "):
-                yield f"event: text\ndata: {word} \n\n"
+                text_payload = {"type": "text", "content": word + " "}
+                yield f"event: text\ndata: {json.dumps(text_payload)}\n\n"
                 await asyncio.sleep(0.05)
 
         # Cache it

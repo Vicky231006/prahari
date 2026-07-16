@@ -1,4 +1,4 @@
-# 🛡️ PRAHARI — Security Sentinel
+# 🛡️ Dhaal (ढाल) — Security Sentinel
 
 AI-driven pipeline that correlates identity-linked cybersecurity telemetry with transactional behaviour to produce higher-confidence fused alerts, plus a deterministic crypto-inventory module for PQC/HNDL detection.
 
@@ -103,7 +103,7 @@ flowchart LR
 ## ✨ Key Features in detail
 
 ### 1. Multi-Channel Correlation (Identity-Linked Joint Window)
-Traditional systems separate network SIEM alerts from transactional fraud alerts. PRAHARI links both using the customer/employee `identity_id`.
+Traditional systems separate network SIEM alerts from transactional fraud alerts. Dhaal (ढाल) links both using the customer/employee `identity_id`.
 - **The Core Correlation**: An isolated new device login (low risk) coupled with an immediate high-value transfer to a new beneficiary (low risk) within a 15-minute sliding window triggers a high-severity **Fused Alert** ($S_{fusion} \ge 0.85$).
 - **12-Feature Classification Vector**: Fuses spatial, temporal, transactional, and authentication features into a unified vector:
   1. `hour_of_day` (IST)
@@ -156,7 +156,7 @@ A high-performance aesthetic theme engine built entirely with Vanilla CSS custom
 ## 📂 Project Directory Structure
 
 ```text
-prahari/
+dhaal/
 ├── data/                       # Data generation & scenario definitions
 │   └── synthetic/              # Generators for transactions, security, & TLS events
 ├── docs/                       # Functional and user flow documentation

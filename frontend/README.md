@@ -1,7 +1,7 @@
-# 🎨 PRAHARI: Frontend Web Application
+# 🎨 Dhaal (ढाल): Frontend Web Application
 > **React + Vite Dashboard for Cyber-Fraud Fusion Analytics & Incident Response**
 
-This is the user interface of PRAHARI, designed for SOC Tier-2 analysts to monitor, investigate, and remediate fused security-transaction anomalies. It is built as a highly responsive React Single Page Application (SPA).
+This is the user interface of Dhaal (ढाल), designed for SOC Tier-2 analysts to monitor, investigate, and remediate fused security-transaction anomalies. It is built as a highly responsive React Single Page Application (SPA).
 
 ---
 

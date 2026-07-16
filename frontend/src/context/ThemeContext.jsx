@@ -4,12 +4,12 @@ const ThemeContext = createContext();
 
 export function ThemeProvider({ children }) {
   const [theme, setTheme] = useState(() => {
-    return localStorage.getItem('prahari-theme') || 'aero';
+    return localStorage.getItem('dhaal-theme') || 'aero';
   });
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
-    localStorage.setItem('prahari-theme', theme);
+    localStorage.setItem('dhaal-theme', theme);
   }, [theme]);
 
   const toggleTheme = () => {

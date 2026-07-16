@@ -7,7 +7,7 @@ export default function Header({ wsConnected }) {
   return (
     <header className="app-header" id="app-header">
       <div className="app-header__left">
-        <span className="app-header__logo">◆ PRAHARI</span>
+        <span className="app-header__logo">◆ Dhaal (ढाल)</span>
         <span className="text-xs text-muted" style={{ marginTop: 2 }}>Security Sentinel</span>
       </div>
       <div className="app-header__right">

@@ -22,19 +22,32 @@ export default function App() {
   const queryClient = useQueryClient();
 
   useEffect(() => {
+    let timeoutId = null;
+    let pendingInvalidation = false;
+
+    const performInvalidation = () => {
+      queryClient.invalidateQueries({ queryKey: ['alerts'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard_kpis'] });
+      queryClient.invalidateQueries({ queryKey: ['quantum_sessions'] });
+      queryClient.invalidateQueries({ queryKey: ['cases'] });
+      pendingInvalidation = false;
+    };
+
     const ws = createAlertsWebSocket((msg) => {
       if (msg.type === 'WS_CONNECTED') setWsConnected(true);
       else if (msg.type === 'WS_DISCONNECTED') setWsConnected(false);
       else if (msg.type === 'NEW_ALERT' || msg.type === 'NEW_QUANTUM_ALERT') {
-        // Invalidate queries so they refetch immediately on new data
-        queryClient.invalidateQueries({ queryKey: ['alerts'] });
-        queryClient.invalidateQueries({ queryKey: ['dashboard_kpis'] });
-        queryClient.invalidateQueries({ queryKey: ['quantum_sessions'] });
-        queryClient.invalidateQueries({ queryKey: ['cases'] });
+        if (!pendingInvalidation) {
+          pendingInvalidation = true;
+          timeoutId = setTimeout(performInvalidation, 1000);
+        }
       }
     });
 
-    return () => ws.close();
+    return () => {
+      ws.close();
+      if (timeoutId) clearTimeout(timeoutId);
+    };
   }, [queryClient]);
 
   return (
